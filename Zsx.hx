@@ -7,11 +7,11 @@ class Zsx {
   static function main() {
    
  var filename=Sys.args()[0];
- var chk=10*1000*1000;
+ var chk=5*1000*1000;
  var fst=FileSystem.stat(filename);
  var dta=File.getBytes(filename);
  var out=Bytes.alloc(chk*2);
- var rout=Bytes.alloc(chk*2);
+ var dec=Bytes.alloc(chk*2);
  var readsize=0;
  var a = File.write(filename +".zsx",true);
 
@@ -28,18 +28,18 @@ class Zsx {
 
  var prevlen = chunk.length;
  var encoded = Shrink.encode(chunk,out);
- var zipped = Compress.run(encoded,9);
+ //var zipped = Compress.run(encoded,9);
 
-// while(zipped.length<prevlen)
-// {
-//   prevlen=zipped.length;
-//   encoded = Shrink.encode(zipped,out);
-//   zipped = Compress.run(encoded,9);  
-// }
+ while(encoded.length<prevlen)
+ {
+   prevlen=encoded.length;
+   encoded = Shrink.encode(encoded,out);
+   //zipped = Compress.run(encoded,9);  
+ }
 
-var decoded = Shrink.decode(encoded,rout);
+//var decoded = Shrink.decode(encoded,dec);
 
-  a.writeBytes(decoded,0,decoded.length);
+  a.writeBytes(encoded,0,encoded.length);
 
  }
  
