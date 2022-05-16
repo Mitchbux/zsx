@@ -14,7 +14,7 @@ class Shrink
         1100 1101 1110 1111
      */
 public static var cc=[0,1,2,3,
-                      1,2,3,0,
+                      12,13,14,15,
                       1,2,3,0,
                       12,13,14,15];
 public static var cb=[0,0,2,2,
@@ -57,7 +57,8 @@ public static var cb=[0,0,2,2,
         {
          var new_len=items;
         for(s in 0...sx_values)solo[s]=0;
-        for(s in 2...sx_top) {
+        for(s in 1...sx_top) {
+        if(s==3)continue;
            var max=code[0];var index=0;
           for(k in 0...sx_values)
            if (code[k]>max)
