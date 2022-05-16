@@ -75,9 +75,9 @@ class Shrink
            if(sort[s]>0)q++;
            s++;
            }
-           //writer.writeBit(sort[x]==0?1:0);
-           //writer.writeValue(q,lf(last));
-           writer.writeValue(solo[x],lf(sx_top));
+           writer.writeBit(sort[x]==0?1:0);
+           writer.writeValue(q,lf(last));
+           //writer.writeValue(solo[x],lf(sx_top));
            if(sort[x]==0)last++;
            sort[x]++;
            
@@ -88,14 +88,13 @@ class Shrink
          }}
 
 
-         if(last<sx_top)
-         {
+         
            s=0;
            while(s<sx_top)
            {
-           //writer.writeBit(sort[s++]>0?1:0);
+           writer.writeBit(sort[s++]>0?1:0);
            }
-        }
+        
         }
         }
         return writer.toBytes();
