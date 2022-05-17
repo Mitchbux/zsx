@@ -7,9 +7,9 @@ class Shrink
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
        public static var sx_top:Int = 10;
-public static var cc=[0,1,2,3,
-                      1,2,3,4,5,6,7];
-public static var cb=[1,3,3,3,6,6,6,6,6,6,6];
+
+public static var ac=[1,4,5,6,33,63,62,61,60,59,58,57,56];
+public static var ab=[1,3,3,3,6, 6 ,6 , 6, 6, 6, 6];
 
    public static function lf(v:Int):Int
 {
@@ -17,7 +17,7 @@ public static var cb=[1,3,3,3,6,6,6,6,6,6,6];
    while((1<<m)<v)m++;
    return m;
 }
-   public static function encode(inData:Bytes,outData:Bytes):Bytes
+   public static function encode(inData:Bytes,outData:Bytes,ecc:Bool):Bytes
    {
         Sys.println("input size :"+inData.length);
 	var reader = new BitReader(inData);
@@ -46,7 +46,8 @@ public static var cb=[1,3,3,3,6,6,6,6,6,6,6];
         {
          var new_len=items;
         for(s in 0...sx_values)solo[s]=0;
-        for(s in 1...sx_top) {
+        for(s in 2...sx_top) {
+      if(s==3)continue;
            var max=code[0];var index=0;
           for(k in 0...sx_values)
            if (code[k]>max)
@@ -61,21 +62,26 @@ public static var cb=[1,3,3,3,6,6,6,6,6,6,6];
         
         for(s in 0...sx_values)code[s]=0;
         items=0;
-        k=0;
+var jump=0;
+        k=0;s=0;
         while(k<new_len)
         {
            
          
            
            x = list[k++];
-           writer.writeValue(cc[solo[x]],cb[solo[x]]);
+           
+           writer.writeValue(
+        ac[solo[x]],
+        ab[solo[x]]);
            
          if(solo[x]==0)
          {
+          
            list[items++]=x;
-          code[x]++;}
-
-        }
+          code[x]++;
+         }
+        s=solo[x];}
         }
         return writer.toBytes();
    }

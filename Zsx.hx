@@ -25,21 +25,21 @@ class Zsx {
  chunk =dta.sub(readsize,fst.size-readsize);
  readsize+=chunk.length; 
  Sys.println((readsize/fst.size*100.0)+"%");
-
- var prevlen = chunk.length;
- var encoded = Shrink.encode(chunk,out);
- //var zipped = Compress.run(encoded,9);
-
+ Sys.println("="+(5<<3));
+ var prevlen = chunk.length*4;
+ var encoded = Shrink.encode(chunk,out,false);
+ 
  while(encoded.length<prevlen)
  {
    prevlen=encoded.length;
-   encoded = Shrink.encode(encoded,out);
-   //zipped = Compress.run(encoded,9);  
+   encoded = Shrink.encode(encoded,out,false);
  }
+
 
 //var decoded = Shrink.decode(encoded,dec);
 
   a.writeBytes(encoded,0,encoded.length);
+ // a.writeBytes(encoded_ecc,0,encoded_ecc.length);
 
  }
  
