@@ -6,11 +6,10 @@ class Shrink
 {
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
-       public static var sx_top:Int = 8;
+       public static var sx_top:Int = 10;
 public static var cc=[0,1,2,3,
-                      12,13,14,15];
-public static var cb=[0,2,2,0,
-                      4,4,4,4];
+                      1,2,3,4,5,6,7];
+public static var cb=[1,3,3,3,6,6,6,6,6,6,6];
 
    public static function lf(v:Int):Int
 {
@@ -47,8 +46,7 @@ public static var cb=[0,2,2,0,
         {
          var new_len=items;
         for(s in 0...sx_values)solo[s]=0;
-        for(s in 2...sx_top) {
-        if(s==3)continue;
+        for(s in 1...sx_top) {
            var max=code[0];var index=0;
           for(k in 0...sx_values)
            if (code[k]>max)
