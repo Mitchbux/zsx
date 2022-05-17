@@ -7,20 +7,10 @@ class Shrink
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
        public static var sx_top:Int = 8;
-      /*
-        0000 0001 0010 0011
-        0100 0101 0110 0111
-        1000 1001 1010 1011
-        1100 1101 1110 1111
-     */
 public static var cc=[0,1,2,3,
-                      12,13,14,15,
-                      1,2,3,0,
                       12,13,14,15];
-public static var cb=[0,0,2,2,
-                      4,4,4,4,
-                      5,5,5,5,
-                      0,0,0,0];
+public static var cb=[0,2,2,0,
+                      4,4,4,4];
 
    public static function lf(v:Int):Int
 {
@@ -57,7 +47,7 @@ public static var cb=[0,0,2,2,
         {
          var new_len=items;
         for(s in 0...sx_values)solo[s]=0;
-        for(s in 1...sx_top) {
+        for(s in 2...sx_top) {
         if(s==3)continue;
            var max=code[0];var index=0;
           for(k in 0...sx_values)
@@ -73,8 +63,6 @@ public static var cb=[0,0,2,2,
         
         for(s in 0...sx_values)code[s]=0;
         items=0;
-         var sort=new Array<Int>();
-        for(k in 1...sx_top)sort.push(0);
         k=0;
         while(k<new_len)
         {
@@ -82,19 +70,13 @@ public static var cb=[0,0,2,2,
          
            
            x = list[k++];
+           writer.writeValue(cc[solo[x]],cb[solo[x]]);
            
          if(solo[x]==0)
          {
-           writer.writeBit(0);
-           writer.writeBit(0);
-
            list[items++]=x;
-           code[x]++;
-         }else{
-           writer.writeValue(cc[solo[x]],cb[solo[x]]);
-}
+          code[x]++;}
 
-         
         }
         }
         return writer.toBytes();

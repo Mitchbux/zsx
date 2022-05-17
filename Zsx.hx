@@ -7,7 +7,7 @@ class Zsx {
   static function main() {
    
  var filename=Sys.args()[0];
- var chk=5*1000*1000;
+ var chk=20*1000*1000;
  var fst=FileSystem.stat(filename);
  var dta=File.getBytes(filename);
  var out=Bytes.alloc(chk*2);
