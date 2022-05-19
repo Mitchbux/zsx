@@ -8,9 +8,6 @@ class Shrink
        public static var sx_values:Int = 256;
        public static var sx_top:Int = 20;
 
-public static var ac=[0,4,5,6,7];
-public static var ab=[1,3,3,3,3];
-
    public static function lf(v:Int):Int
 {
    var m=1;
@@ -71,14 +68,16 @@ public static var ab=[1,3,3,3,3];
            x = list[k++];
            
            
-         if(solo[x]==0)
+         if(solo[x]%5==0)
          {
          writer.writeBit(0);
            list[items++]=x;
           code[x]++;
          }else
 {
-writer.writeValue(ac[solo[x]%5],ab[solo[x]%5]);
+s=solo[x]%5;
+while(s-->1)writer.writeBit(1);
+writer.writeBit(0);
 s = Math.floor(solo[x]/5);
 writer.writeValue(s,2);
 }
