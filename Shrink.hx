@@ -6,7 +6,7 @@ class Shrink
 {
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
-       public static var sx_top:Int = 20;
+       public static var sx_top:Int = 56;
 
    public static function lf(v:Int):Int
 {
@@ -16,8 +16,9 @@ class Shrink
 }
    public static function encode(inData:Bytes,outData:Bytes,ecc:Bool):Bytes
    {
-        Sys.println("input size :"+inData.length);
-	var reader = new BitReader(inData);
+        //Sys.println("input size :"+inData.length);
+	Sys.print(".");
+        var reader = new BitReader(inData);
         var writer = new BitWriter(outData);
 
         var list = new Array<UInt>();
@@ -67,19 +68,20 @@ class Shrink
            
            x = list[k++];
            
-           
-         if(solo[x]%5==0)
-         {
-         writer.writeBit(0);
+         s=solo[x]%7;
+                    
+         if(s==0){
+          writer.writeBit(0);
            list[items++]=x;
           code[x]++;
          }else
 {
-s=solo[x]%5;
-while(s-->1)writer.writeBit(1);
-writer.writeBit(0);
-s = Math.floor(solo[x]/5);
-writer.writeValue(s,2);
+writer.writeBit(1);
+writer.writeBit(s==1?1:0);
+if(s>1)
+writer.writeValue(s-2,2);
+s=Math.floor(solo[x]/7);
+writer.writeValue(s,3);
 }
 
 
