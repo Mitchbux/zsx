@@ -6,7 +6,7 @@ class Shrink
 {
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
-       public static var sx_top:Int = 12;
+       public static var sx_top:Int = 56;
 
    public static function lf(v:Int):Int
 {
@@ -68,22 +68,23 @@ class Shrink
            
            x = list[k++];
            
-         s=solo[x]%3;
+         s=solo[x]%7;
                     
          if(s==0){
           writer.writeBit(0);
+    
            list[items++]=x;
           code[x]++;
          }else
 {
 writer.writeBit(1);
-while(s>1)
-{
-if(s%3==0)continue;
-writer.writeBit(1);
-s--;
+writer.writeBit(s<3?1:0);
+if(s<3)writer.writeBit(s==2?1:0);
+else{
+writer.writeValue(s-3,2);
 }
-writer.writeBit(0);
+s=Math.floor(solo[x]/7);
+writer.writeValue(s,2);
 }
 
 
