@@ -6,7 +6,7 @@ class Shrink
 {
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
-       public static var sx_top:Int = 56;
+       public static var sx_top:Int = 12;
 
    public static function lf(v:Int):Int
 {
@@ -16,8 +16,8 @@ class Shrink
 }
    public static function encode(inData:Bytes,outData:Bytes,ecc:Bool):Bytes
    {
-        //Sys.println("input size :"+inData.length);
-	Sys.print(".");
+        Sys.println("input size :"+inData.length);
+	//Sys.print(".");
         var reader = new BitReader(inData);
         var writer = new BitWriter(outData);
 
@@ -61,6 +61,9 @@ class Shrink
         items=0;
 
         k=0;s=0;
+        var sorted =new Array<Int>();
+        for(s in 0...sx_top)sorted.push(0);
+        var coded=0;var last=0;
         while(k<new_len)
         {
            
@@ -68,24 +71,37 @@ class Shrink
            
            x = list[k++];
            
-         s=solo[x]%7;
+         s=solo[x];
                     
          if(s==0){
-          writer.writeBit(0);
-    
+    writer.writeValue(0,lf(coded));
            list[items++]=x;
           code[x]++;
          }else
 {
+coded++;
+var q=0;
+for(n in 0...s)
+q+=sorted[n];
+writer.writeValue(q,lf(coded));
+sorted[s]++;
+if(coded>3)
+{
+n=0;
+while(coded>0)
+{
+
+while(sorted[n]>0)
+{
 writer.writeBit(1);
-writer.writeBit(s<3?1:0);
-if(s<3)writer.writeBit(s==2?1:0);
-else{
-writer.writeValue(s-3,2);
+sorted[n]--;
+coded--;
 }
-s=Math.floor(solo[x]/7);
-writer.writeValue(s,2);
+writer.writeBit(0);
+n++;
 }
+coded=0;last=0;
+}}
 
 
 
