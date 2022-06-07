@@ -24,7 +24,6 @@ class Zsx {
  else
  chunk =dta.sub(readsize,fst.size-readsize);
  readsize+=chunk.length; 
- Sys.println((readsize/fst.size*100.0)+"%");
  var prevlen = chunk.length*4;
  var zipped = Compress.run(chunk,9);
  var encoded = Shrink.encode(zipped,out,false);
@@ -35,6 +34,7 @@ class Zsx {
    encoded = Shrink.encode(encoded,out,false);
  }
 
+ Sys.println((readsize/fst.size*100.0)+"%");
 
 //var decoded = Shrink.decode(encoded,dec);
 
