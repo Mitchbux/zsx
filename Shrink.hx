@@ -4,9 +4,9 @@ import BitReader;
 
 class Shrink
 {
-       public static var sx_bits:Int = 8;
-       public static var sx_values:Int = 256;
-       public static var sx_top:Int = 256;
+       public static var sx_bits:Int = 6;
+       public static var sx_values:Int = 64;
+       public static var sx_top:Int = 15;
 
    public static function lf(v:Int):Int
 {
@@ -69,23 +69,38 @@ class Shrink
         {         
            
            x = list[k++];
-           
-         s=solo[x];
-
-writer.writeBit(s%5==0?1:0);
-if(s%5==0)
+     s=solo[x];
+if(s==0)
 {
 
-list[items++]=x;
-code[x]++;
-}else
-{
+//list[items++]=x;
+//code[x]++;
 
-s=Math.floor(s/5);
-while(s-->0)writer.writeBit(1);
-writer.writeBit(0);
-writer.writeValue(s%5-1,2);
 }
+n=s%3;
+var q=0;
+for(x in 0...n)
+if(sorted[x]>0)q++;
+writer.writeValue(q,lf(last));
+writer.writeBit(sorted[n]==0?1:0);
+if(sorted[n]==0)last++;
+sorted[n]++;
+s=Math.floor(solo[x]/3);
+q=0;
+for(x in 0...s)
+if(sorted[x]>0)q++;
+writer.writeValue(q,lf(last));
+writer.writeBit(sorted[s]==0?1:0);
+if(sorted[s]==0)last++;
+sorted[s]++;
+if(last>4)
+{
+for(n in 0...sx_top)sorted[n]=0;
+last=0;
+}
+
+
+
 
         }index++;
         }
