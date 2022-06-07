@@ -74,8 +74,8 @@ writer.writeValue(Math.floor(s/16),2);
 if(s==0)
 {
 
-//list[items++]=x;
-//code[x]++;
+list[items++]=x;
+code[x]++;
 
 }
 n=s%16;
@@ -86,7 +86,7 @@ writer.writeValue(q,lf(last));
 writer.writeBit(sorted[n]==0?1:0);
 if(sorted[n]==0)last++;
 sorted[n]++;
-if(last>7)
+if(last>4)
 {
 for(n in 0...16)
 {
