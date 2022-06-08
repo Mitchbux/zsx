@@ -77,8 +77,8 @@ list[items++]=x;
 code[x]++;
 }else
 {
- if(sorted[s]==0)sorted[s]=++last;
- else writer.writeValue(sorted[s],lf(last));
+ if(sorted[s]==0){sorted[s]=++last;
+} else writer.writeValue(sorted[s],lf(last));
 
  if(last==16)
  {
@@ -101,7 +101,7 @@ code[x]++;
      sorted[s]=0;
     }
     sorted[0]=1;
-    last=0;
+    last=1;
  }
 }
 
