@@ -78,23 +78,16 @@ writer.writeValue(q,lf(last));
 writer.writeBit(sorted[n]==0?1:0);
 if(sorted[n]==0)last++;
 sorted[n]++;
-if(last>3)
+if(last>30)
 {
-for(n in 0...256)
+for(n in 0...sx_top)
 {
 writer.writeBit(sorted[n]>0?1:0);
 if(sorted[n]>0)last--;
-if(last<=coded)break;
+if(last>=coded)break;
 sorted[n]=0;
-}last=coded++;
-if(coded >30)
-{
-for(n in 0...256)
-sorted[n]=0;
-last=0;
+}last=++coded;
 }
-}
-
 
 
 
