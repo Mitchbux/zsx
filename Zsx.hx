@@ -26,7 +26,7 @@ class Zsx {
  readsize+=chunk.length; 
  var prevlen = chunk.length*4;
  var zipped = Compress.run(chunk,9);
- var encoded = Shrink.encode(zipped,out,false);
+ var encoded = Shrink.encode(chunk,out,false);
  
  while(encoded.length<prevlen)
  {
