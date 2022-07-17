@@ -63,6 +63,7 @@ class Shrink
 
         k=0;s=0;
         var sorted =new Array<Int>();
+        var initial=new Array<Int>();
         for(s in 0...sx_top)sorted.push(0);
         var coded=0;var last=0;
         while(k<new_len)
@@ -78,22 +79,16 @@ code[x]++;
 
  writer.writeBit(sorted[s]==0?1:0);
 
- if(sorted[s]==0){sorted[s]=++last;
-} else{
-var q=0;
-for(n in 0...s)
-if(sorted[n]>0)q++;
- writer.writeValue(q,lf(last));
-}if(last==32)
+ if(sorted[s]==0){sorted[s]=++last;initial.push(s);
+}else
+ writer.writeValue(sorted[s],lf(last));
+if(last==24)
 {
-for(s in 0...sx_top)
-{
-writer.writeBit(sorted[s]>0?1:0);
-if(sorted[s]>0)
-{last--;}
+for(s in 0...last)
+writer.writeValue(initial[s],lf(last));
+for(s in 1...sx_top)
 sorted[s]=0;
-if(last==0)break;
-}last=0;
+last=0;
 }
 
 
