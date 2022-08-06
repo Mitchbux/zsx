@@ -6,7 +6,7 @@ class Shrink
 {
        public static var sx_bits:Int = 8;
        public static var sx_values:Int = 256;
-       public static var sx_top:Int = 90;
+       public static var sx_top:Int = 96;
 
    public static function lf(v:Int):Int
 {
@@ -78,17 +78,22 @@ code[x]++;
 }
 
  writer.writeBit(sorted[s]==0?1:0);
-
- if(sorted[s]==0){sorted[s]=++last;initial.push(s);
-}else
- writer.writeValue(sorted[s],lf(last));
-if(last==24)
+ coded+=7;
+ if(sorted[s]==0){initial[last]=s;sorted[s]=++last;
+}else{
+ writer.writeValue(sorted[s]-1,lf(last));
+ coded-=lf(last);
+}
+if(coded>=160)
 {
-for(s in 0...last)
-writer.writeValue(initial[s],lf(last));
-for(s in 1...sx_top)
-sorted[s]=0;
-last=0;
+coded-=32;
+var dico:Int=Std.int(coded/lf(sx_top));
+for(s in 0...dico){
+writer.writeValue(initial[--last],lf(sx_top));
+sorted[initial[last]]=0;
+}
+
+coded=0;
 }
 
 
@@ -96,6 +101,10 @@ last=0;
 
 
         }index++;
+
+for(s in 0...last)
+writer.writeValue(initial[s],lf(sx_top));
+
         }
         return writer.toBytes();
    }
