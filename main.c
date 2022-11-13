@@ -166,6 +166,8 @@ byte *zsx_encode(byte *data,int len) {
 	byte *result;
 	
 	reader_t *reader = new_reader(data);
+	
+	write_value(bytes, len, 32);
 	//printf("input size: %d\n", len);
 	printf(".");
 	
@@ -179,7 +181,7 @@ byte *zsx_encode(byte *data,int len) {
 		list[items++]=x;
 		}
 	
-	
+	write_value(bytes, items, 32);
 	while(items)
 	{
 		int new_len=items;
@@ -209,7 +211,7 @@ byte *zsx_encode(byte *data,int len) {
 			code[x]++;
 		}
 		if(last>0)
-		write_bit(bytes, s>initial[last-1]?1:0);
+		write_bit(bytes, (sorted[s]==0&&s>initial[last-1])?1:0);
 		if(sorted[s]==0)
 		{
 			if(last>0)
@@ -247,12 +249,10 @@ byte *zsx_encode(byte *data,int len) {
 	
 	
 	flushWrite(bytes);
-	*((size_t*)result_buffer - 1)=bytes->start+8;
+	*((size_t*)result_buffer - 1)=bytes->start;
 	result = result_buffer;
 
-	memcpy(result,&len,sizeof(int));
-	memcpy(result+sizeof(int),&bytes->start,sizeof(int));
-	memcpy(result+sizeof(int)+sizeof(int),bytes->data,bytes->start);
+	memcpy(result,bytes->data,bytes->start);
 	
 	
 	return result;
@@ -261,27 +261,22 @@ byte *zsx_encode(byte *data,int len) {
 
 int values[sx_values];
 byte *zsx_decode(byte *data,int len) {
-	unsigned int x,n,s,k,v,size =*(int*)data;
-
-	int stop=*(int*)(data+sizeof(int));
-	
-	byte *bytes_data = data+sizeof(int)+sizeof(int);
+	reader_t *bytes = new_reader(data);
+	unsigned int x,n,s,k,v,size = read_value(bytes, 32);
     
 	puts("decoding...");
 	
 	
 	byte *result = _new(byte,size);
 	
-	reader_t *bytes = new_reader(bytes_data);
 	
 	int **decode = _new(int*,10);
     int *encoded = _new(int, size);	
-	int *marked = _new(int, size);
 	int *count = _new(int, 10);
 	int *dico = _new(int, sx_top);
 	int items = 0;
     int index = 0;
-	int new_items = size;
+	int new_items = read_value(bytes, 32);
 	while(new_items>0)
 	{
 	
@@ -384,7 +379,7 @@ byte *zsx_decode(byte *data,int len) {
 
 int test() {
 	
-  int i,fd = open("enwik9", O_RDONLY);
+  int i,fd = open("enwik9.1024", O_RDONLY);
   if (fd == -1) {
     printf( "Can't read file!\n");
 	return 0;
