@@ -175,10 +175,9 @@ void zsx_del(zsx_node *root) {
 int zsx[sx_win];
 void zsx_dump(writer_t *w, zsx_node *root, int last)
 {
-	
 	int counter = 0;
-	for (int z = 0; z < sx_values && counter<last; z++) 
-		for (int s = 0; s < sx_values && counter < last; s++) 
+	for (int z = 0; z < sx_values ; z++) 
+		for (int s = 0; s < sx_values ; s++) 
 		{
 			zsx_node *node = root->data[z];
 			if (node) node = node->data[s];
@@ -186,20 +185,19 @@ void zsx_dump(writer_t *w, zsx_node *root, int last)
 			if (node)
 			{
 				counter++;
-				for (int x = 0; x < sx_values && counter < last; x++)
+				for (int x = 0; x < sx_values ; x++)
 				{
 					zsx_node *rest = root->data[z];
 					if (rest) rest = rest->data[s];
 					if (rest) rest = rest->data[x];
 					if (rest)
-						zsx[node->cnt - 1] = counter;
+						zsx[rest->cnt - 1] = counter;
 				}
 			}
 		}
-
 	for (int s = 0; s < last; s++)
 	{
-		write_value(w, zsx[s], lf(counter));
+		write_value(w, zsx[s]-1, lf(counter));
 	}
 
 }
@@ -207,7 +205,7 @@ void zsx_dump(writer_t *w, zsx_node *root, int last)
 char *bytes_buffer;
 char *result_buffer;
 
-#define ZSX
+//#define ZSX
 
 /****** zsx ******/
 byte *zsx_encode(byte *data, int len) {
@@ -274,7 +272,7 @@ byte *zsx_decode(byte *data, int len) {
 	int **diko = _new(int *, 64*1024);
 	int *codes = _new(int, len);
 	int *rest = _new(int, sx_win);
-	int items = size*2;
+	int items = size;
 	int decoded = 0;
 	int count = 0;
 	int index = 0;
@@ -309,7 +307,6 @@ byte *zsx_decode(byte *data, int len) {
 						diko[max][1] = s;
 						max++;
 					}
-					
 			for(index=0;index<last;index++)
 			{
 				z = read_value(bytes, lf(max));
