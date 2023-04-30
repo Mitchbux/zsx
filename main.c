@@ -123,14 +123,12 @@ int lf(unsigned int n) {
 	return m;
 }
 
-#define sx_chunk_bits 28
-#define sx_chunk 1 << sx_chunk_bits
+#define sx_chunk_bits 25
+#define sx_chunk 1 << (sx_chunk_bits)
 #define sx_bits 8
-#define sx_half 4
-#define sx_rest 16
-#define sx_values 4096
-#define sx_win 4 * 1024
-#define sx_items 2
+#define sx_values 256
+#define sx_win 256*1024
+#define sx_items 3
 
 typedef struct {
 	void *data[sx_values];
@@ -143,11 +141,13 @@ void zsx_set(zsx_node *root, int *x, int len, int data) {
 		destination = _new(zsx_node, 1);
 		for (int i = 0; i < sx_values; i++)
 			destination->data[i] = 0;
+		destination->cnt = 0;
 		root->data[x[sx_items - len]] = destination;
 	}
 	if (len == 1) {
 		destination->cnt = data;
-	} else {
+	}
+	else {
 		zsx_set(destination, x, len - 1, data);
 	}
 }
@@ -160,47 +160,58 @@ int zsx_get(zsx_node *root, int *x, int len) {
 		return destination->cnt;
 	else
 		return zsx_get(destination, x, len - 1);
+
 }
 
-void zsx_dump(writer_t *w, zsx_node *root, int *dico) {
-	int zsx_counter = 0;
-	for (int z = 0; z < sx_values; z++) {
-		zsx_node *initial = root->data[z];
-    write_bit(w, initial?1:0);
-    if (initial)
-		{
-			for (int s = 0; s < sx_rest; s++) {
-				zsx_node *found = initial->data[s];
-				
-				if (found)
-				{
-					write_value(w, s, 4);
-					dico[found->cnt] = zsx_counter++;
-				}
-			}
-		}
-	}
-}
 
 void zsx_del(zsx_node *root) {
-	for (int i = 0; i < sx_values; i++)
-		if (root->data[i])
-			zsx_del(root->data[i]);
+	if (root->cnt == 0)
+		for (int i = 0; i < sx_values; i++)
+			if (root->data[i])
+				zsx_del(root->data[i]);
 	_del(root)
 }
 
-int sorted[sx_win * 2];
+int zsx[sx_win];
+void zsx_dump(writer_t *w, zsx_node *root, int last)
+{
+	
+	int counter = 0;
+	for (int z = 0; z < sx_values && counter<last; z++) 
+		for (int s = 0; s < sx_values && counter < last; s++) 
+		{
+			zsx_node *node = root->data[z];
+			if (node) node = node->data[s];
+			write_bit(w, node ? 1 : 0);
+			if (node)
+			{
+				counter++;
+				for (int x = 0; x < sx_values && counter < last; x++)
+				{
+					zsx_node *rest = root->data[z];
+					if (rest) rest = rest->data[s];
+					if (rest) rest = rest->data[x];
+					if (rest)
+						zsx[node->cnt - 1] = counter;
+				}
+			}
+		}
+
+	for (int s = 0; s < last; s++)
+	{
+		write_value(w, zsx[s], lf(counter));
+	}
+
+}
 
 char *bytes_buffer;
 char *result_buffer;
-
-int list[16];
 
 #define ZSX
 
 /****** zsx ******/
 byte *zsx_encode(byte *data, int len) {
-	int z, s, x, k, v, n;
+	int z, s, x;
 	byte *result;
 	writer_t *bytes = new_writer(bytes_buffer);
 	reader_t *reader = new_reader(data);
@@ -209,49 +220,38 @@ byte *zsx_encode(byte *data, int len) {
 	printf(".");
 
 	zsx_node *root = _new(zsx_node, 1);
-
 	int last = 0;
-	int items = 0;
-	int *codes = _new(int, len);
-	int half;
-	int count = 0;
-
-	while (reader->start <= len) {
-		z = 0;
-		s = read_value(reader, sx_bits);
-		x = read_value(reader, sx_bits);
-
-		list[z++] = (s << sx_half) ^ x;
-		list[z++] = x >> sx_half;
-		
-		x = zsx_get(root, list, z);
-		write_bit(bytes, x?1:0);
-		if (x) {
-			codes[count++] = x;
-		} else {
-			zsx_set(root, list, z, ++last);
-		}
-
-		if (last >= sx_win) {
-			zsx_dump(bytes, root, sorted);
-			zsx_del(root);
-			write_value(bytes, count, sx_chunk_bits);
-			for (s = 0; s < count; s++)
-				write_value(bytes, sorted[codes[s]], lf(last));
-			root = _new(zsx_node, 1);
-			last = 0;
-			count = 0;
-		}
-	}
-	zsx_dump(bytes, root, sorted);
-	zsx_del(root);
-	write_value(bytes, count, sx_chunk_bits);
-	for (s = 0; s < count; s++)
-		write_value(bytes, sorted[codes[s]], lf(last));
-	_del(codes) 
 	
 
-		flushWrite(bytes);
+	while (reader->start <= len) {
+		
+		z = read_value(reader, sx_bits);
+		s = read_value(reader, sx_bits);
+		x = read_value(reader, sx_bits);
+		
+		int list[] = {z,s,x};
+		int index = zsx_get(root, list, sx_items);
+		
+		write_bit(bytes, index ? 1 : 0);
+		if (index)
+			write_value(bytes, index - 1, lf(last));
+		else
+		{
+			zsx_set(root, list, sx_items, ++last);
+			write_value(bytes, x, sx_bits);
+		}
+		if (last == sx_win)
+		{
+			zsx_dump(bytes, root, last);
+			zsx_del(root);
+			root = _new(zsx_node, 1);
+			last = 0;
+		}
+	}
+	zsx_dump(bytes, root, last);
+	zsx_del(root);
+
+	flushWrite(bytes);
 	*((size_t *)result_buffer - 1) = bytes->start;
 	result = result_buffer;
 
@@ -262,46 +262,86 @@ byte *zsx_encode(byte *data, int len) {
 
 byte *zsx_decode(byte *data, int len) {
 	reader_t *bytes = new_reader(data);
-	unsigned int z, s, x, k, size = read_value(bytes, 32);
+	unsigned int z, s, x, size = read_value(bytes, 32);
 
 	puts("decoding...");
 
-	byte *result = _new(byte, size);
-
-	int **dico = _new(int *, size);
+	byte *result = _new(byte, size+12);
+	*((size_t *)result_buffer - 1) = size;
+	writer_t *w = new_writer(result);
+	
+	int **dico = _new(int *, sx_win);
+	int **diko = _new(int *, 64*1024);
+	int *codes = _new(int, len);
+	int *rest = _new(int, sx_win);
+	int items = size*2;
 	int decoded = 0;
-	int items = size;
-	int max = 0;
-	int last = 0;
 	int count = 0;
-	int half = 0;
+	int index = 0;
+	int last = 0;
 
+	for(s=0;s<sx_win;s++)
+	{
+		if(s<64*1024)
+			diko[s] = _new(int, 4);
+		dico[s]= _new(int, 4);
+	}
 	while (decoded < items) {
-		max = read_value(bytes, lf(sx_win)) + 1;
-
-		last = 0;
-		for (z = 0; z < sx_values; z++)
-			for (s = 0; s < sx_values; s++)
-				if (read_bit(bytes)) {
-					dico[last] = _new(int, 4);
-					dico[last][0] = z;
-					dico[last][1] = s;
-					last++;
-				}
-
-		count = read_value(bytes, sx_chunk_bits);
-		for (z = 0; z < count; z++) {
-			s = read_value(bytes, lf(max));
-			result[decoded++] = dico[s][0];
-			result[decoded++] = dico[s][1];
+		
+		if(read_bit(bytes))
+		{
+			index = read_value(bytes, lf(last));
+			codes[count++] = index;
+		}else
+		{
+			x = read_value(bytes, sx_bits);
+			rest[last] = x;
+			codes[count++]=last++;
+		}
+		if(last == sx_win || (count*3+decoded) >= items)
+		{
+			int max = 0;
+			for (z = 0; z < sx_values; z++)	
+				for(s = 0; s < sx_values; s++)
+					if(read_bit(bytes))
+					{
+						diko[max][0] = z;
+						diko[max][1] = s;
+						max++;
+					}
+					
+			for(index=0;index<last;index++)
+			{
+				z = read_value(bytes, lf(max));
+				dico[index][0] = diko[z][0]; //z
+				dico[index][1] = diko[z][1]; //s
+				dico[index][2] = rest[index];//x
+			}
+			
+			for(s=0;s<count;s++)
+			{
+				result[decoded++] = dico[codes[s]][0];
+				result[decoded++] = dico[codes[s]][1];
+				result[decoded++] = dico[codes[s]][2];
+			}
+			
+			
+			last = 0;
+			count = 0;
 		}
 
-		for (z = 0; z < last; z++)
-			_del(dico[z])
 	}
-
+	
+	
+	for(s=0;s<last;s++)
+	{
+		if(s<64*1024)
+			_del(diko[s]);
+		_del(dico[s]);
+	}
 	_del(dico);
-
+	_del(diko);
+	
 	return result;
 }
 
