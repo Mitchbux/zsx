@@ -1,167 +1,153 @@
 import haxe.io.Bytes;
 import BitWriter;
 import BitReader;
+import Node;
 
 class Shrink
 {
-       public static var sx_bits:Int = 8;
-       public static var sx_values:Int = 256;
-       public static var sx_top:Int = 96;
 
-   public static function lf(v:Int):Int
-{
-   var m=1;
-   while((1<<m)<v)m++;
-   return m;
-}
-   public static function encode(inData:Bytes,outData:Bytes,ecc:Bool):Bytes
-   {
-        //Sys.println("input size :"+inData.length);
-	Sys.print(".");
-        var reader = new BitReader(inData);
-        var writer = new BitWriter(outData);
+	public static function lf(v:Int):Int
+	{
+		var m=1;
+		while((1<<m)<v)m++;
+		return m;
+	}
+	
+	public static function encode(inData:Bytes,outData:Bytes):Bytes
+	{
+		Sys.print(":");
+		var reader = new BitReader(inData);
+		var writer = new BitWriter(outData);
 
-        var list = new Array<UInt>();
-        var code = new Array<Int>();
-        var solo = new Array<UInt>();
+		var root = new Node();
+		writer.writeValue(inData.length,32);
+		
+		var last = 0;
+		while(reader.canRead())
+		{
+			var list:Array<UInt> = [reader.readValue(Node.sx_bits),
+									reader.readValue(Node.sx_bits),
+									reader.readValue(Node.sx_bits)];
+									
+			var got = root.get(list.copy());
+			writer.writeBit(got != null ? 1 : 0);
+			if(got!=null)
+			{
+				writer.writeValue(got.value - 1, lf(last));
+			}else
+			{
+				root.set(list.copy(), ++last);
+			}
+			
+			if(last == Node.sx_win)
+			{
+				root.dump(writer, last);
+				root = new Node();
+				last = 0;
+			}
+			
+		}
+		
+		root.dump(writer, last);
+	
+		return writer.toBytes();
+	}
+	
+	
+	
+	public static function decode(inData:Bytes,outData:Bytes):Bytes
+	{
+		var reader = new BitReader(inData);
+		var writer = new BitWriter(outData);
+		var size:Int = reader.readValue(32);
+		var z:Int, s:Int, x:Int;
+		var cz:Array<Bool> = new Array<Bool>();
+		var cs:Array<Int> = new Array<Int>();
+		var cx:Array<Int> = new Array<Int>();
+		var zsx:Array<Int> = new Array<Int>();
+		var cs_counter:Int = 0, cx_counter:Int = 0;
+		
+		var codes:Array<Int> = new Array<Int>();
+		
+		var decoded:Int=0;
+		var last:Int = 0;
+		
+		while(decoded < size && reader.canRead())
+		{
+			if(reader.readBit()==1)
+			{
+				codes.push(reader.readValue(lf(last)));
+			}else
+			{
+				codes.push(last++);
+			}
+			
+			if(last==Node.sx_win || decoded + codes.length*3 >= size)
+			{
+				for (z in 0...Node.sx_values)
+				{
+					if (reader.readBit()==1)
+					{
+						cz.push(true);
+						while (reader.readBit()==1)
+						{
+							cs.push(reader.readValue(4));
+							while(reader.readBit()==1)
+							{
+								cx.push(reader.readValue(4));
+							}
+						}
+					}else
+						cz.push(false);
+				}
+			}
+			
+			
+			var cc:Array<Int> = new Array<Int>();
+			var ck:Array<Int> = new Array<Int>();
 
-        writer.writeValue(inData.length,32);
-        var x:Int,s:Int,k:Int,n:Int;
-        for(s in 0...sx_values)
-        {
-          code.push(0);
-          solo.push(0);
-        }
-        var items=0; 
-        while(reader.canRead())
-        {
-         x = reader.readValue(sx_bits);
-         list.push(x);
-         items++;
-         code[x]++;
-        }
-       var index=0;
-        while(items>0)
-        {
-         var new_len=items;
-        for(s in 0...sx_values)solo[s]=0;
-        for(s in 1...sx_top) {
-           var max=code[0];var index=0;
-          for(k in 0...sx_values)
-           if (code[k]>max)
-           {
-              max=code[k];
-              index=k;
-           }
-          code[index]=-1;
-          solo[index]=s;
-          writer.writeValue(index,sx_bits);
-        }
-        
-        for(s in 0...sx_values)code[s]=0;
-        items=0;
-
-        k=0;s=0;
-        var sorted =new Array<Int>();
-        var initial=new Array<Int>();
-        for(s in 0...sx_top)sorted.push(0);
-        var coded=0;var last=0;
-        while(k<new_len)
-        {         
-           
-           x = list[k++];
-     s=solo[x];
-if(s==0)
-{
-list[items++]=x;
-code[x]++;
-}
-
- writer.writeBit(sorted[s]==0?1:0);
- coded+=7;
- if(sorted[s]==0){initial[last]=s;sorted[s]=++last;
-}else{
- writer.writeValue(sorted[s]-1,lf(last));
- coded-=lf(last);
-}
-if(coded>=160)
-{
-coded-=32;
-var dico:Int=Std.int(coded/lf(sx_top));
-for(s in 0...dico){
-writer.writeValue(initial[--last],lf(sx_top));
-sorted[initial[last]]=0;
-}
-
-coded=0;
-}
+			for(s in 0...cs.length)
+			{
+				cc.push(reader.readValue(4));
+			}
+			
+			for(s in 0...cx.length)
+			{
+				ck.push(reader.readValue(4));
+			}
+			
+			var counter:Int = 0;
+			var kounter:Int = 0;
+			var dico:Array<Array<Int>> = new Array<Array<Int>>();
+			
+			for (z in 0...Node.sx_values) if (cz[z])
+			{
+				for (s in 0...Node.sx_values) if (cs[cs_counter]==(s>>4))
+				{
+					if (counter == cc[cs_counter])
+					{
+						cs_counter++;						
+						counter = 0;
+						for (x in 0...Node.sx_values) if (cx[cx_counter]==(x>>4))
+						{							
+							if (kounter == ck[cx_counter])
+							{
+								dico.push([z,s,x]);
+								kounter = 0;
+								cx_counter++;
+							}
+							kounter++;							
+						}
+					}
+					counter++;
+				}
+			}
+			
+			
+		}
+		
 
 
-
-
-
-        }index++;
-
-for(s in 0...last)
-writer.writeValue(initial[s],lf(sx_top));
-
-        }
-        return writer.toBytes();
-   }
-   public static function decode(inData:Bytes,outData:Bytes):Bytes
-   {
-      var reader = new BitReader(inData);
-      var writer = new BitWriter(outData);
-        var code = new Array<Array<Int>>();
-        var solo = new Array<UInt>();
-        var size:Int = reader.readValue(32);
-        var count = new Array<Int>();
-        var x:Int,s:Int,k:Int,n:Int;
-        for(s in 0...sx_values)
-        {
-          solo.push(0);
-        }
-       var new_size:Int; 
-     var items:Int=size;
-     var index:Int=0;
-       while(items>0&&reader.canRead())
-       {
-      for(s in 1...sx_top)
-        solo[s]=reader.readValue(sx_bits);
-      count.push(items);
-      new_size=items;
-      items=0;
-      k=0;
-      code.push(new Array<Int>());
-    
-      while(k<new_size&&reader.canRead())
-      {
-        s=reader.readValue(lf(sx_top));
-      
-       
-            if(s==0){
-             code[index].push(-1);
-         items++;
-            }else code[index].push(solo[s]);
-          
-       
-       k++;
-      }
-      // trace(items);
-        index++;
-      }
-      while(index>0)
-      {
-        index--;
-        k=0;
-        for(s in 0...count[index])
-        if(code[index][s]==(-1))
-         code[index][s]=code[index+1][k++];
-
-      }
-
-      for(s in 0...count[0])
-      writer.writeValue(code[0][s],sx_bits);
-      return writer.toBytes();
+		return writer.toBytes();
    }
 }
