@@ -5,13 +5,13 @@ import sys.FileSystem;
 import haxe.zip.Compress;
 class Zsx {
   static function main() {
-   
+   Sys.println("Encoding...");
  var filename=Sys.args()[0];
- var chk=25*1000*1000;
+ var chk=32*1024*1024;
  var fst=FileSystem.stat(filename);
  var dta=File.getBytes(filename);
- var out=Bytes.alloc(chk*2);
- var dec=Bytes.alloc(chk*2);
+ var out=Bytes.alloc(chk);
+ var dec=Bytes.alloc(chk);
  var readsize=0;
  var a = File.write(filename +".zsx",true);
 
@@ -24,17 +24,17 @@ class Zsx {
  else
  chunk =dta.sub(readsize,fst.size-readsize);
  readsize+=chunk.length; 
- var prevlen = chunk.length*4;
- var zipped = Compress.run(chunk,9);
- var encoded = Shrink.encode(chunk,out,false);
+ var prevlen = chunk.length;
+ //var zipped = Compress.run(chunk,9);
+ var encoded = Shrink.encode(chunk,out);
  
  while(encoded.length<prevlen)
  {
    prevlen=encoded.length;
-   encoded = Shrink.encode(encoded,out,false);
+   encoded = Shrink.encode(encoded,out);
  }
 
- Sys.println((readsize/fst.size*100.0)+"%");
+ Sys.println(Std.int((readsize/fst.size*100.0))+"%");
 
 //var decoded = Shrink.decode(encoded,dec);
 
@@ -45,7 +45,7 @@ class Zsx {
  
     a.flush();
     a.close();  
-    Sys.println("encoded to "+filename+".zsx");
+    Sys.println("Encoded to "+filename+".zsx");
   }
 }
 
