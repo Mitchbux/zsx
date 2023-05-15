@@ -176,25 +176,22 @@ int zsx[sx_win];
 void zsx_dump(writer_t *w, zsx_node *root, int last)
 {
 	int counter = 0;
-	for (int z = 0; z < sx_values ; z++) 
-		for (int s = 0; s < sx_values ; s++) 
+	for (int z = 0; z < sx_values ; z++) {
+		zsx_node *znode =root->data[z];
+		write_bit(w,znode?1:0);
+		if(znode){counter++;
+
+		for (int s = 0; s < sx_values ; s++)
+		for (int x = 0; x < sx_values ; x++)
 		{
-			zsx_node *node = root->data[z];
-			if (node) node = node->data[s];
-			write_bit(w, node ? 1 : 0);
-			if (node)
-			{
-				counter++;
-				for (int x = 0; x < sx_values ; x++)
-				{
-					zsx_node *rest = root->data[z];
-					if (rest) rest = rest->data[s];
-					if (rest) rest = rest->data[x];
-					if (rest)
-						zsx[rest->cnt - 1] = counter;
-				}
-			}
+			zsx_node *rest = root->data[z];
+			if (rest) rest = rest->data[s];
+			if (rest) rest = rest->data[x];
+			if (rest)
+				zsx[rest->cnt - 1] = counter,counter=0;
 		}
+			}
+	}
 	for (int s = 0; s < last; s++)
 	{
 		write_value(w, zsx[s]-1, lf(counter));
@@ -205,7 +202,7 @@ void zsx_dump(writer_t *w, zsx_node *root, int last)
 char *bytes_buffer;
 char *result_buffer;
 
-//#define ZSX
+#define ZSX
 
 /****** zsx ******/
 byte *zsx_encode(byte *data, int len) {
@@ -219,7 +216,9 @@ byte *zsx_encode(byte *data, int len) {
 
 	zsx_node *root = _new(zsx_node, 1);
 	int last = 0;
-	
+	int cx[sx_values];
+	int lx=0;
+	for(s=0;s<sx_values;s++)cx[s]=0;
 
 	while (reader->start <= len) {
 		
@@ -236,7 +235,12 @@ byte *zsx_encode(byte *data, int len) {
 		else
 		{
 			zsx_set(root, list, sx_items, ++last);
-			write_value(bytes, x, sx_bits);
+			write_bit(bytes,cx[x]?1:0);
+			if(cx[x])write_value(bytes,cx[x]-1,lf(lx));
+			else cx[x]=++lx;
+			write_bit(bytes,cx[s]?1:0);
+			if(cx[s])write_value(bytes,cx[s]-1,lf(lx));
+			else cx[s]=++lx;
 		}
 		if (last == sx_win)
 		{
@@ -244,10 +248,19 @@ byte *zsx_encode(byte *data, int len) {
 			zsx_del(root);
 			root = _new(zsx_node, 1);
 			last = 0;
+			for(s=0;s<sx_values;s++){
+			write_bit(bytes,cx[s]?1:0);
+			if(cx[s])write_value(bytes,cx[s],lf(lx));
+			cx[s]=0;}
+			lx=0;
 		}
 	}
 	zsx_dump(bytes, root, last);
 	zsx_del(root);
+	for(s=0;s<sx_values;s++){
+	write_bit(bytes,cx[s]?1:0);
+	if(cx[s])write_value(bytes,cx[s],lf(lx));
+	cx[s]=0;}
 
 	flushWrite(bytes);
 	*((size_t *)result_buffer - 1) = bytes->start;
@@ -343,7 +356,7 @@ byte *zsx_decode(byte *data, int len) {
 }
 
 int test() {
-	int i, fd = open("enwik9", O_RDONLY);
+	int i, fd = open("enwik9.1024", O_RDONLY);
 	if (fd == -1) {
 		printf("Can't read file!\n");
 		return 0;
@@ -357,7 +370,7 @@ int test() {
 	bytes_buffer = _new(char, sx_chunk);
 	result_buffer = _new(char, sx_chunk);
 
-	FILE *f = fopen("enwik9.zsx", "wb");
+	FILE *f = fopen("enwik9.1024.dec", "wb");
 
 	if (f == NULL) {
 		printf("Can't create file!\n");
