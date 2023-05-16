@@ -173,31 +173,48 @@ void zsx_del(zsx_node *root) {
 }
 
 int zsx[sx_win];
+int cz[sx_values];
+int cs[sx_values];
+int cx[sx_values];
+
 void zsx_dump(writer_t *w, zsx_node *root, int last)
 {
-	int counter = 0;
-	for (int z = 0; z < sx_values ; z++) {
-		zsx_node *znode =root->data[z];
-		write_bit(w,znode?1:0);
-		if(znode){counter++;
-
-		for (int s = 0; s < sx_values ; s++)
-		for (int x = 0; x < sx_values ; x++)
-		{
-			zsx_node *rest = root->data[z];
-			if (rest) rest = rest->data[s];
-			if (rest) rest = rest->data[x];
-			if (rest)
-				zsx[rest->cnt - 1] = counter,counter=0;
-		}
+	int zsx_counter = 0;
+	int z_counter = 0;
+	int max = 0;
+	for (int z = 0; z < sx_values; z++)if(cz[z])
+	{
+		zsx_node *znode = root->data[z];		
+		if (znode)
+		{			
+			for (int s = 0; s < sx_values; s++)if(cs[s])
+			{
+				zsx_node *snode = znode->data[s];				
+				if (snode)
+				{	
+					
+					for (int x = 0; x < sx_values; x++)if(cx[x])
+					{
+						zsx_node *xnode = snode->data[x];				
+						if (xnode)
+						{							
+							zsx[xnode->cnt - 1] = zsx_counter++;						
+						}
+					}
+				}
 			}
+		}
 	}
+
+	for (int s = 0; s < sx_values; s++)
+		cz[s] = 0, cs[s] = 0, cx[s] = 0;
+	
 	for (int s = 0; s < last; s++)
 	{
-		write_value(w, zsx[s]-1, lf(counter));
+		write_value(w, zsx[s], lf(zsx_counter));
 	}
-
 }
+
 
 char *bytes_buffer;
 char *result_buffer;
@@ -216,51 +233,50 @@ byte *zsx_encode(byte *data, int len) {
 
 	zsx_node *root = _new(zsx_node, 1);
 	int last = 0;
-	int cx[sx_values];
-	int lx=0;
-	for(s=0;s<sx_values;s++)cx[s]=0;
+	int sx[sx_values];
+	for (s = 0; s < sx_values; s++)
+		cz[s] = 0, cs[s] = 0, cx[x] = 0;
+
+	int lx = 0;
+	int ls = 0;
+	int lz = 0;
 
 	while (reader->start <= len) {
-		
+
 		z = read_value(reader, sx_bits);
 		s = read_value(reader, sx_bits);
 		x = read_value(reader, sx_bits);
-		
-		int list[] = {z,s,x};
+
+		int list[] = { z,s,x };
 		int index = zsx_get(root, list, sx_items);
-		
 		write_bit(bytes, index ? 1 : 0);
 		if (index)
 			write_value(bytes, index - 1, lf(last));
 		else
 		{
 			zsx_set(root, list, sx_items, ++last);
-			write_bit(bytes,cx[x]?1:0);
-			if(cx[x])write_value(bytes,cx[x]-1,lf(lx));
-			else cx[x]=++lx;
-			write_bit(bytes,cx[s]?1:0);
-			if(cx[s])write_value(bytes,cx[s]-1,lf(lx));
-			else cx[s]=++lx;
+			if (cz[z] == 0)lz++;
+			cz[z] = 1;
+			if (cs[s] == 0)ls++;
+			cs[s] = 1;
+			if (cx[x] == 0)lx++;
+			cx[x] = 1;
 		}
-		if (last == sx_win)
+
+		if ((lz*ls*lx)>256*1024)
 		{
 			zsx_dump(bytes, root, last);
 			zsx_del(root);
 			root = _new(zsx_node, 1);
 			last = 0;
-			for(s=0;s<sx_values;s++){
-			write_bit(bytes,cx[s]?1:0);
-			if(cx[s])write_value(bytes,cx[s],lf(lx));
-			cx[s]=0;}
-			lx=0;
+			lz = 0;
+			ls = 0;
+			lx = 0;
 		}
+
 	}
 	zsx_dump(bytes, root, last);
 	zsx_del(root);
-	for(s=0;s<sx_values;s++){
-	write_bit(bytes,cx[s]?1:0);
-	if(cx[s])write_value(bytes,cx[s],lf(lx));
-	cx[s]=0;}
 
 	flushWrite(bytes);
 	*((size_t *)result_buffer - 1) = bytes->start;
@@ -270,7 +286,6 @@ byte *zsx_encode(byte *data, int len) {
 
 	return result;
 }
-
 byte *zsx_decode(byte *data, int len) {
 	reader_t *bytes = new_reader(data);
 	unsigned int z, s, x, size = read_value(bytes, 32);
