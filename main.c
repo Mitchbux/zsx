@@ -13,7 +13,7 @@ typedef uint8_t byte;
 
 void *mem_alloc(size_t item_size, size_t n_item) {
 	size_t *x = (size_t *)calloc(1, sizeof(size_t) * 2 + n_item * item_size);
-	x[0] = item_size;
+	x[0] = item_size;g
 	x[1] = n_item;
 	return x + 2;
 }
@@ -114,6 +114,15 @@ reader_t *new_reader(byte *in) {
 	return r;
 }
 
+writer_t *flash(wrinter_t *w) {
+	writer_t *writer = _new(writer_t, 1);
+	writer->power = w->power;
+	writer->bits = w->bits;
+	writer->start = w->start;
+	writer->data = w->data;
+	return writer;
+}
+
 /*----- sx related -----*/
 
 int lf(unsigned int n) {
@@ -123,11 +132,13 @@ int lf(unsigned int n) {
 	return m;
 }
 
+
 #define sx_chunk_bits 25
-#define sx_chunk 1 << (sx_chunk_bits)
+#define sx_chunk 1 << sx_chunk_bits
 #define sx_bits 8
 #define sx_values 256
-#define sx_win 256*1024
+#define sx_win 16*1024*1024
+#define sx_max 256*1024
 #define sx_items 3
 
 typedef struct {
@@ -180,8 +191,9 @@ int cx[sx_values];
 void zsx_dump(writer_t *w, zsx_node *root, int last)
 {
 	int zsx_counter = 0;
-	int z_counter = 0;
-	int max = 0;
+	for (int s = 0; s < sx_values; s++)
+		write_bit(w, cz[s]), write_bit(w, cs[s]), write_bit(w, cx[s]);
+
 	for (int z = 0; z < sx_values; z++)if(cz[z])
 	{
 		zsx_node *znode = root->data[z];		
@@ -241,12 +253,19 @@ byte *zsx_encode(byte *data, int len) {
 	int ls = 0;
 	int lz = 0;
 
+	writer_t *save = flash(bytes);
+	write_value(bytes, 0, sx_chunk_bits);
+
+	int count = 0;
+
 	while (reader->start <= len) {
 
 		z = read_value(reader, sx_bits);
 		s = read_value(reader, sx_bits);
 		x = read_value(reader, sx_bits);
-
+		
+		count++;
+		
 		int list[] = { z,s,x };
 		int index = zsx_get(root, list, sx_items);
 		write_bit(bytes, index ? 1 : 0);
@@ -263,7 +282,7 @@ byte *zsx_encode(byte *data, int len) {
 			cx[x] = 1;
 		}
 
-		if ((lz*ls*lx)>256*1024)
+		if ((lz*ls*lx)> sx_max)
 		{
 			zsx_dump(bytes, root, last);
 			zsx_del(root);
@@ -272,20 +291,32 @@ byte *zsx_encode(byte *data, int len) {
 			lz = 0;
 			ls = 0;
 			lx = 0;
-		}
+			
+			write_value(save, count, sx_chunk_bits);
+			_del(save);
+			save = flash(bytes);
+			write_value(bytes, 0, sx_chunk_bits);
 
+			count = 0;
+		}
 	}
+
 	zsx_dump(bytes, root, last);
 	zsx_del(root);
+	write_value(save, count, sx_chunk_bits);
+	_del(save);
 
 	flushWrite(bytes);
 	*((size_t *)result_buffer - 1) = bytes->start;
 	result = result_buffer;
 
 	memcpy(result, bytes->data, bytes->start);
+	
+	_del(bytes);
 
 	return result;
 }
+
 byte *zsx_decode(byte *data, int len) {
 	reader_t *bytes = new_reader(data);
 	unsigned int z, s, x, size = read_value(bytes, 32);
