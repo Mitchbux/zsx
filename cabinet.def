@@ -1,0 +1,15 @@
+LIBRARY cabinet.dll
+
+EXPORTS
+CreateCompressor
+SetCompressorInformation
+QueryCompressorInformation
+Compress
+ResetCompressor
+CloseCompressor
+CreateDecompressor
+SetDecompressorInformation
+QueryDecompressorInformation
+Decompress
+ResetDecompressor
+CloseDecompressor
