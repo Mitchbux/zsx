@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <compressapi.h>
 
+#include "sfx.c"
 
 #define sx_chunk_bits 22
 #define sx_chunk (1<<sx_chunk_bits)
@@ -57,7 +58,7 @@ int main(int argc, char **argv) {
 	
 	char outfile[256];
 	strcpy(outfile, filename);
-	strcat(outfile, ".zsx");
+	strcat(outfile, ".exe");
 	HANDLE hOutFile = CreateFile(
 			outfile,
 			GENERIC_WRITE,
@@ -71,6 +72,10 @@ int main(int argc, char **argv) {
 		printf("Can't create file!\n");
 		return 0;
 	};
+
+	char txtfile[256];
+	strcpy(txtfile, filename);
+	strcat(txtfile, ".txt");
 
 	printf("encoding...\n");
 	while (encoded < file_size) 
@@ -86,8 +91,19 @@ int main(int argc, char **argv) {
 		byte *out = (byte *)malloc(csize);
 		Compress(Compressor, in, bytes_read, out, csize, &csize);
 		DWORD asize;
-		
-		WriteFile(hOutFile, out, csize, &asize, NULL);
+		int page_size = (((csize+0x100)/0x200)+1)*0x200;
+		int global_size = (((page_size+0x1000)/0x1000)+4)*0x1000;
+		printf("%d ", page_size);
+		memset(in, 0, bytes_read);
+		memcpy(in, sfx, 0x1000);
+		*(int*)(in+0xD0)=global_size;
+		*(int*)(in+0x1F8)=csize+0x0100;
+		*(int*)(in+0x200)=page_size;
+		*(int*)(in+0xEFC)=csize;
+		*(int*)(in+0xEF8)=bytes_read;
+		memcpy(in+0xE28, txtfile, strlen(txtfile)+1);
+		memcpy(in+0xF00, out, csize);
+		WriteFile(hOutFile, in, 0xE00+page_size, &asize, NULL);
 		free(out);
 		printf("%.2f%%\n", (double)encoded / (double)file_size * 100.0);
 	}

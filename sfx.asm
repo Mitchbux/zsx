@@ -18,6 +18,33 @@ section 'C0D3' code readable executable
         invoke  DialogBoxParam,eax,37,HWND_DESKTOP,DialogProc,0
         invoke  TerminateThread,[hThread], 0
         invoke  ExitProcess,0
+
+
+IntToStr:
+        ; eax = number, ebx = base, edi = buffer
+        push    ecx edx
+        xor     ecx,ecx
+      .new:
+        xor     edx,edx
+        div     ebx
+        push    edx
+        inc     ecx
+        test    eax,eax
+        jnz     .new
+      .loop:
+        pop     eax
+        add     al,30h
+        cmp     al,'9'
+        jng     .ok
+        add     al,7
+      .ok:
+        stosb
+        loop    .loop
+        mov     al,0
+        stosb
+        pop     edx ecx
+        ret
+
 proc FIO E1, N2, ol
      mov eax, [N2]
      mov [bytes_read], eax
@@ -27,16 +54,27 @@ endp
 proc Decode param
      push edi
      push edx
-
      invoke CreateDecompressor, MSZIP, 0, Compressor
-     invoke GlobalAlloc, GPTR, 1024*1025
-     mov edx, eax
-     invoke CreateFile, filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL , 0
+     invoke CreateFile, filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0
      mov [hFile], eax
-     invoke WriteFile, [hFile], szDone, 16, bytes_read, 0
+     invoke Decompress, [Compressor], d4t4, [bytes_read], 0, 0, decompressed
+     invoke LocalAlloc, LPTR, [decompressed]
+     mov [dummy], eax
+     ;invoke GlobalAlloc, GPTR, 1024
+     ;mov edi, eax
+     ;mov esi, eax
+     ;xor eax, eax
+     ;mov eax, [bytes_read]
+     ;mov ebx, 10
+     ;stdcall IntToStr
+     ;invoke MessageBox, 0, esi, 0, MB_OK
+     invoke Decompress, [Compressor], d4t4, [bytes_read], [dummy], [decompressed], decompressed
+
+     invoke WriteFile, [hFile], [dummy], [decompressed], bytes_read, 0
      invoke CloseHandle, [hFile]
-     invoke GlobalFree, edx
-     mov eax, [max]
+     invoke CloseDecompressor, [Compressor]
+     invoke GlobalFree, edi
+     mov eax, [bytes_read]
      mov [counter], eax
      invoke MessageBox, 0, szDecompressed, szDone, MB_OK
      pop edx
@@ -148,11 +186,11 @@ section 'D4T4' readable writeable
   szDone db 'Decompression '
   szOk db 'OK', 0
   szDecompressed db 'Decompressed to file : '
-  filename db 'test.zip', 0
+  filename db '_______________________________________________________________', 0
   hFile dd 0
   ol OVERLAPPED
-  bytes_read dd 0
   decompressed dd 0
+  dummy dd 0
   dlg dd 0
   hdc dd 0
   size dd 290
@@ -164,3 +202,5 @@ section 'D4T4' readable writeable
   Compressor dd 0
   counter dd 0
   max dd 0x2DFF00
+  bytes_read dd 0
+  d4t4 dd 0
