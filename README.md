@@ -5,6 +5,7 @@ Zsx compression
 install tcc
 
 copy cabinet.def in tcc/lib directory
+copy compressapi.h in tcc/include directory
 
 install fasm
 
