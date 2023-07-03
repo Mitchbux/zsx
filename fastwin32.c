@@ -1,5 +1,6 @@
-// ompile : tcc ****.c -lcabinet -o shrink.exe
-
+/* compile : 
+ tcc fastwin32.c -lcabinet -o shrink.exe
+*/
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
