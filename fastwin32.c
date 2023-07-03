@@ -1,3 +1,5 @@
+// ompile : tcc ****.c -lcabinet -o shrink.exe
+
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -8,6 +10,7 @@
 #include <sys/types.h>
 #include <windows.h>
 #include <compressapi.h>
+
 
 /* -------- aux stuff ---------- */
 
@@ -301,14 +304,14 @@ void CALLBACK FIO(DWORD E1, DWORD N2, LPOVERLAPPED ol) {
 	zsx_bytes_read = N2;
 }
 
-int test() {
+int test(char *filename) {
 
 	OVERLAPPED ol;
 	ol.Offset = 0;
 	ol.OffsetHigh = 0;
 
 	HANDLE hFile = CreateFile(
-		"enwik9",
+		filename,
 		GENERIC_READ,
 		FILE_SHARE_READ,
 		NULL,
@@ -328,7 +331,10 @@ int test() {
 	zsx_bytes_buffer = zsx_new(char, zsx_chunk);
 	zsx_result_buffer = zsx_new(char, zsx_chunk);
 
-	FILE *f = fopen("enwik9.zsx", "wb");
+	char *outfilename = zsx_new(char, 256);
+	strcpy(outfilename, filename);
+	strcat(outfilename, ".zsx");
+	FILE *f = fopen(outfilename, "wb");
 
 	if (f == NULL) {
 		printf("Can't create file!\n");
@@ -402,6 +408,9 @@ int test() {
 
 
 int main(int argc, char **argv) {
-	test();
+	if(argc<2)
+		printf("Usage : shrink filename\n");
+	else
+	test(argv[1]);
 	return 0;
 }
