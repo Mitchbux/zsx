@@ -131,17 +131,12 @@ int zsx_lf(unsigned long n) {
 #define zsx_bits 8
 #define zsx_values 256
 #define zsx_items 2
-#define zsx_top 4096
+#define zsx_top 32*1024
 
-int zsx_NextIndex;
-int zsx_Next[1<<(zsx_bits*zsx_items)];
 int zsx_Unknown[1<<(zsx_bits*zsx_items)];
 int zsx_Initial[1<<(zsx_bits*zsx_items)][zsx_items];
 
 int zsx_Indexes[1<<(zsx_bits*zsx_items)];
-int zsx_BadIndex[1<<(zsx_bits*zsx_items)];
-int zsx_BadChunk[1<<(zsx_bits*zsx_items)];
-int zsx_BadSize[1<<(zsx_bits*zsx_items)];
 
 char *zsx_bytes_buffer;
 char *zsx_result_buffer;
@@ -160,13 +155,9 @@ byte *zsx_encode(byte *data) {
 
 	printf(".");
 
-	zsx_NextIndex = 0;
 	int last = 0;
-	int chunk = 0;
 	for(s=0;s<1<<(zsx_bits*zsx_items);s++)
-		zsx_BadIndex[s]=zsx_Indexes[s]=0;
-	int max = 0;
-	int total = 0;
+		zsx_Indexes[s]=0;
 	while (reader->start <= len) {
 		int s = zsx_read_value(reader, zsx_bits);
 		int x = zsx_read_value(reader, zsx_bits);
@@ -184,16 +175,8 @@ byte *zsx_encode(byte *data) {
 				zsx_write_value(bytes, x, zsx_bits);
 				zsx_Unknown[index] = 0;
 			}
-
-		}
-		else if (zsx_BadIndex[both])
-		{
-			zsx_write_bit(bytes, 1);
-			zsx_write_value(bytes, zsx_BadChunk[both], zsx_lf(chunk));
-			zsx_write_value(bytes, zsx_BadIndex[both]- 1, zsx_lf(zsx_BadSize[zsx_BadChunk[both]]));
 		}else
 		{
-			zsx_write_bit(bytes, 0);
 			int n = last++;
 			zsx_Initial[n][0] = s;
 			zsx_Initial[n][1] = x;
@@ -202,35 +185,17 @@ byte *zsx_encode(byte *data) {
 		}
 		if(last==zsx_top)
 		{
-			for(x=0,s=0;s<last;s++)
+			for(s=0;s<(1<<zsx_bits*zsx_items);s++)
 			{
-				if(zsx_Unknown[s+1])
-				{
-					int both = (zsx_Initial[s][0]<<zsx_bits)^zsx_Initial[s][1];
-					zsx_BadIndex[both]=++x;
-					zsx_BadChunk[both]=chunk;
-				}
-				zsx_Indexes[s]=0;
+				zsx_write_bit(bytes, zsx_Indexes[s]&zsx_Unknown[zsx_Indexes[s]]);
+				if(zsx_Indexes[s])
+				if(zsx_Unknown[zsx_Indexes[s]])
+					zsx_write_value(bytes, zsx_Indexes[s]-1, zsx_lf(last));
 				zsx_Unknown[s]=0;
+				zsx_Indexes[s]=0;
 			}
-			zsx_BadSize[chunk++]=x;
 			last = 0;
-			total += x;
-		}
-		if(total > 32*1024)
-		{
-			for(s=0;s<1<<(zsx_bits*zsx_items);s++)
-			{
-				zsx_write_bit(bytes, zsx_BadIndex[s]?1:0);
-				if(zsx_BadIndex[s])
-				{
-					zsx_write_value(bytes, zsx_BadChunk[s], zsx_lf(chunk));
-					zsx_write_value(bytes, zsx_BadIndex[s] - 1, zsx_lf(zsx_BadSize[zsx_BadChunk[s]]));
-				}
-				zsx_BadIndex[s]=0;
-			}
-			chunk = 0;
-			total = 0;
+
 		}
 		
 	}
@@ -243,18 +208,7 @@ byte *zsx_encode(byte *data) {
 			zsx_write_value(bytes, zsx_Initial[s][1], zsx_bits);
 		}
 	}
-	
-	for(s=0;s<1<<(zsx_bits*zsx_items);s++)
-	{
-		zsx_write_bit(bytes, zsx_BadIndex[s]?1:0);
-		if(zsx_BadIndex[s])
-		{
-			zsx_write_value(bytes, zsx_BadChunk[s]- 1, zsx_lf(chunk));
-			zsx_write_value(bytes, zsx_BadIndex[s] - 1, zsx_lf(zsx_BadSize[zsx_BadChunk[s]]));
-		}
-	}
 
-	//printf("%d ", bytes->start);
 	zsx_flushWrite(bytes);
 	*((size_t *)zsx_result_buffer - 1) = bytes->start;
 	result = zsx_result_buffer;
@@ -270,23 +224,20 @@ byte *zsx_decode(byte *data, int len) {
 
 	puts("decoding...");
 	byte * result = zsx_bytes_buffer;
+	*((size_t *)zsx_bytes_buffer - 1) = size;
 	zsx_writer_t *w = zsx_writer(result);
 
-	int **BadIndexToIndex = zsx_new(int, zsx_top);
-	
-	int items = size/2+(size%2);
-	int **codes = zsx_new(int*, items);
+	int **dico = zsx_new(int*, zsx_top);
+	int items = size/2;
+	int *codes = zsx_new(int, items);
 	int decoded = 0;
-	int total = 0;
 	int count = 0;
 	int last = 0;
-	int chunk = 0;
-
+	int start = 0;
 	for(s = 0; s < zsx_top; s++)
-		BadIndexToIndex[s] = zsx_new(int, zsx_top);
-
-	for(s = 0; s < items; s++)
-		codes[s]=zsx_new(int, 2);
+	{
+		dico[s] = zsx_new(int, zsx_items);
+	}
 	
 	while(count < items)
 	{
@@ -298,89 +249,60 @@ byte *zsx_decode(byte *data, int len) {
 				s = zsx_read_value(bytes, zsx_bits);
 				x = zsx_read_value(bytes, zsx_bits);
 				zsx_Unknown[z] = 0;
+				dico[z][0] = s;
+				dico[z][1] = x;
 			}
-			codes[count][0] = z;
-			codes[count][1] = chunk;
-			count++;
-
-		}else if(zsx_read_bit(bytes))
-		{
-			c = zsx_read_value(bytes, zsx_lf(chunk));
-			b = zsx_read_value(bytes, zsx_lf(zsx_BadSize[c]));
-			codes[count][0] = BadIndexToIndex[c][b];
-			codes[count][1] = c;
-			count++;
-			
+			codes[count] = z;
 		}else
 		{
 			zsx_Unknown[last]=1;
-			codes[count][0] = last++;
-			codes[count][1] = chunk;
-			count++;
+			codes[count] = last++;
 		}
+		count++;
 		if(last == zsx_top)
 		{
-			for(x=0,s=0;s<last;s++)
-			{
-				if(zsx_Unknown[s])
-				{
-					BadIndexToIndex[chunk][x++] = s;
-				}
-			}
-			zsx_BadSize[chunk++]=x;
-			total+=x;
-			last = 0;
-		}
-		if(total>32*1024)
-		{
-			for(z=0;z<1<<(zsx_bits*zsx_items);z++)
+			for(s=0;s<(1<<zsx_bits*zsx_items);s++)
 			{
 				if(zsx_read_bit(bytes))
 				{
-					c = zsx_read_value(bytes, zsx_lf(chunk));
-					b = zsx_read_value(bytes, zsx_lf(zsx_BadSize[c]));
-					s = z>>zsx_bits;
-					x = z&(zsx_values-1);
+					z=zsx_read_value(bytes, zsx_lf(last));
+					dico[z][0]=s>>zsx_bits;
+					dico[z][1]=s&(zsx_values-1);
 				}
+				zsx_Unknown[s]=0;
+				zsx_Indexes[s]=0;
 			}
-			chunk = 0;
-			total = 0;
-			
-			//todo : decode values from dico
+				
+			for(s=start;s<count;s++)
+			{
+				result[decoded++] = dico[codes[s]][0];
+				result[decoded++] = dico[codes[s]][1];
+			}
+
+			last = 0;
+			start = count;
 		}
 	}
 	
 	for(z=0;z<last;z++)
-	{
 		if(zsx_Unknown[z])
 		{
-			s = zsx_read_value(bytes, zsx_bits);
-			x = zsx_read_value(bytes, zsx_bits);
+			dico[z][0] = zsx_read_value(bytes, zsx_bits);
+			dico[z][1] = zsx_read_value(bytes, zsx_bits);
 		}
-	}
-	
-	
-	for(z=0;z<1<<(zsx_bits*zsx_items);z++)
+
+	for(s=start;s<count;s++)
 	{
-		if(zsx_read_bit(bytes))
-		{
-			c = zsx_read_value(bytes, zsx_lf(chunk));
-			b = zsx_read_value(bytes, zsx_lf(zsx_BadSize[c]));
-			s = z>>zsx_bits;
-			x = z&(zsx_values-1);
-		}
+		result[decoded++] = dico[codes[s]][0];
+		result[decoded++] = dico[codes[s]][1];
 	}
-
-	//todo : decode values from dico
+			
 	for(s = 0; s < zsx_top; s++)
-		zsx_del(BadIndexToIndex[s]);
+		zsx_del(dico[s]);
 
-	for(s = 0; s < items; s++)
-		zsx_del(codes[s]);
-	
 	zsx_del(codes);
-	zsx_del(BadIndexToIndex);
-
+	zsx_del(dico);
+	
 	return result;
 }
 
@@ -450,8 +372,6 @@ int test(char *filename) {
 		ol.Offset += zsx_bytes_read;
 		int prev_len = zsx_bytes_read;
 
-#ifdef ZSX	
-
 
 
 		size_t csize;
@@ -480,18 +400,6 @@ int test(char *filename) {
 		fwrite(data, len_zsx, 1, f);
 		BackLine();
 		printf("%.2f%%", (double)encoded / (double)file_size * 100.0);
-#else
-		memcpy(result_buffer, bytes_buffer, bytes_read);
-		byte * data = zsx_encode(zsx_result_buffer, bytes_read);
-		size_t len_zsx = zsx_len(data);
-
-		byte *decompressed = zsx_decode(data, len_zsx);
-		puts(decompressed);
-		fwrite(decompressed, zsx_len(decompressed), 1, f);
-		BackLine();
-		printf("%.2f%%", (double)encoded / (double)file_size * 100.0);
-
-#endif
 	}
 
 	CloseCompressor(Compressor);
@@ -502,11 +410,81 @@ int test(char *filename) {
 	return 1;
 }
 
+int testdec(char *filename) {
+
+	OVERLAPPED ol;
+	ol.Offset = 0;
+	ol.OffsetHigh = 0;
+
+	HANDLE hFile = CreateFile(
+		filename,
+		GENERIC_READ,
+		FILE_SHARE_READ,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+		NULL);
+
+	if (hFile == INVALID_HANDLE_VALUE) {
+		printf("Can't read file!\n");
+		return 0;
+	};
+
+	int encoded = 0;
+	DWORD file_high;
+	int file_size = GetFileSize(hFile, &file_high);
+
+	zsx_bytes_buffer = zsx_new(char, zsx_chunk);
+	zsx_result_buffer = zsx_new(char, zsx_chunk);
+
+	char *outfilename = zsx_new(char, 256);
+	strcpy(outfilename, filename);
+	strcat(outfilename, ".dec");
+	FILE *f = fopen(outfilename, "wb");
+
+	if (f == NULL) {
+		printf("Can't create file!\n");
+		return 0;
+	};
+
+	printf("encoding...\n");
+
+	COMPRESSOR_HANDLE Compressor = NULL;
+	CreateCompressor(3, NULL, &Compressor);
+
+
+	while (encoded < file_size) {
+		ReadFileEx(hFile, zsx_result_buffer, zsx_chunk, &ol, FIO);
+		SleepEx(3000, TRUE);
+		encoded += zsx_bytes_read;
+		ol.Offset += zsx_bytes_read;
+		int prev_len = zsx_bytes_read;
+
+		*((size_t *)zsx_result_buffer - 1) = zsx_bytes_read;
+		byte * data = zsx_encode(zsx_result_buffer);
+		size_t len_zsx = zsx_len(data);
+
+		byte *decompressed = zsx_decode(data, len_zsx);
+		puts(decompressed);
+		fwrite(decompressed, zsx_len(decompressed), 1, f);
+		BackLine();
+		printf("%.2f%%", (double)encoded / (double)file_size * 100.0);
+	}
+
+	CloseCompressor(Compressor);
+
+	fclose(f);
+	CloseHandle(hFile);
+
+	return 1;
+}
 
 int main(int argc, char **argv) {
 	if(argc<2)
-		printf("Usage : %s filename\n", argv[0]);
-	else
+		printf("Usage : %s [-d] filename\n", argv[0]);
+	else if(argc==2)
 	test(argv[1]);
+	else if(argv[1][0]=='-' && argv[1][1]=='d')
+	testdec(argv[2]);
 	return 0;
 }
