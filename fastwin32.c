@@ -1,6 +1,9 @@
 /* compile : 
  tcc fastwin32.c -lcabinet -o shrink.exe
 */
+/* compile : 
+ tcc fastwin32.c -lcabinet -o shrink.exe
+*/
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -137,7 +140,8 @@ int zsx_Unknown[1<<(zsx_bits*zsx_items)];
 int zsx_Initial[1<<(zsx_bits*zsx_items)][zsx_items];
 
 int zsx_Indexes[1<<(zsx_bits*zsx_items)];
-
+int zsx_Next[1<<(zsx_bits*zsx_items)];
+int zsx_NextIndex;
 char *zsx_bytes_buffer;
 char *zsx_result_buffer;
 
@@ -158,6 +162,7 @@ byte *zsx_encode(byte *data) {
 	int last = 0;
 	for(s=0;s<1<<(zsx_bits*zsx_items);s++)
 		zsx_Indexes[s]=0;
+	zsx_NextIndex = 0;
 	while (reader->start <= len) {
 		int s = zsx_read_value(reader, zsx_bits);
 		int x = zsx_read_value(reader, zsx_bits);
@@ -188,12 +193,22 @@ byte *zsx_encode(byte *data) {
 			for(s=0;s<(1<<zsx_bits*zsx_items);s++)
 			{
 				zsx_write_bit(bytes, zsx_Indexes[s]&zsx_Unknown[zsx_Indexes[s]]);
-				if(zsx_Indexes[s])
-				if(zsx_Unknown[zsx_Indexes[s]])
+				if(zsx_Indexes[s]&zsx_Unknown[zsx_Indexes[s]])
+				{
 					zsx_write_value(bytes, zsx_Indexes[s]-1, zsx_lf(last));
+				}else if (zsx_Indexes[s] && zsx_Unknown[zsx_Indexes[s]])
+					zsx_Next[zsx_NextIndex++] = zsx_Indexes[s]-1;
 				zsx_Unknown[s]=0;
 				zsx_Indexes[s]=0;
 			}
+			for(x=0;x<zsx_NextIndex;x++)
+			{
+				s=zsx_Next[x];
+				zsx_write_value(bytes, s, zsx_lf(last));
+				zsx_write_value(bytes, zsx_Initial[s][0], zsx_bits);
+				zsx_write_value(bytes, zsx_Initial[s][1], zsx_bits);				
+			}
+			zsx_NextIndex = 0;
 			last = 0;
 
 		}
@@ -268,11 +283,17 @@ byte *zsx_decode(byte *data, int len) {
 					z=zsx_read_value(bytes, zsx_lf(last));
 					dico[z][0]=s>>zsx_bits;
 					dico[z][1]=s&(zsx_values-1);
+					zsx_Unknown[z]=0;
 				}
-				zsx_Unknown[s]=0;
 				zsx_Indexes[s]=0;
 			}
-				
+			for(s=0;s<last;s++)if(zsx_Unknown[s])
+			{
+				z = zsx_read_value(bytes, zsx_lf(last));
+				dico[z][0] = zsx_read_value(bytes, zsx_bits);
+				dico[z][1] = zsx_read_value(bytes, zsx_bits);
+			}
+			
 			for(s=start;s<count;s++)
 			{
 				result[decoded++] = dico[codes[s]][0];
