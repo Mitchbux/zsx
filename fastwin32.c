@@ -139,60 +139,11 @@ int zsx_Initial[1<<(zsx_bits*zsx_items)][zsx_items];
 int zsx_Indexes[1<<(zsx_bits*zsx_items)];
 int zsx_BadIndex[1<<(zsx_bits*zsx_items)];
 
+int zsx_NextIndex;
+int zsx_Next[1<<(zsx_bits*zsx_items)];
+
 char *zsx_bytes_buffer;
 char *zsx_result_buffer;
-
-void merge (zsx_writer_t *w, int *a, int n, int m) {
-    int i, j, k;
-    int *x = malloc(n * sizeof (int));
-    for (i = 0, j = m, k = 0; k < n; k++) {
-		if(j<n&&i<m&&w)zsx_write_bit(w, a[j]<a[i]?1:0);
-        x[k] = j == n      ? a[i++]
-             : i == m      ? a[j++]
-             : a[j] < a[i] ? a[j++]
-             :               a[i++];
-    }
-    for (i = 0; i < n; i++) {
-        a[i] = x[i];
-    }
-    free(x);
-}
-
-void merge_sort (zsx_writer_t *w, int *a, int n) {
-    if (n < 2)
-        return;
-    int m = n / 2;
-    merge_sort(w, a, m);
-    merge_sort(w, a + m, n - m);
-    merge(w, a, n, m);
-}
-
-void merge_read (zsx_reader_t *r, int *a, int n, int m) {
-    int i, j, k;
-    int *x = malloc(n * sizeof (int));
-    for (i = 0, j = m, k = 0; k < n; k++) {
-        x[k] = j == n      ? a[i++]
-             : i == m      ? a[j++]
-             : zsx_read_bit(r) ? a[j++]
-             :               a[i++];
-    }
-    for (i = 0; i < n; i++) {
-        a[i] = x[i];
-    }
-    free(x);
-}
-
-void merge_sort_read (zsx_reader_t *r, int *a, int n) {
-    if (n < 2)
-        return;
-    int m = n / 2;
-    merge_sort_read(r, a, m);
-    merge_sort_read(r, a + m, n - m);
-    merge_read(r, a, n, m);
-}
-
-
-#define ZSX
 
 /****** zsx ******/
 byte *zsx_encode(byte *data) {
@@ -211,6 +162,8 @@ byte *zsx_encode(byte *data) {
 	for(s=0;s<1<<(zsx_bits*zsx_items);s++)
 		zsx_Indexes[s]=0, zsx_BadIndex[s]=0;
 	
+	zsx_NextIndex = 0;
+	
 	while (reader->start <= len) {
 		int s = zsx_read_value(reader, zsx_bits);
 		int x = zsx_read_value(reader, zsx_bits);
@@ -228,30 +181,29 @@ byte *zsx_encode(byte *data) {
 				zsx_write_value(bytes, s, zsx_bits);
 				zsx_write_value(bytes, x, zsx_bits);
 				zsx_Unknown[index]=0;
+				zsx_Indexes[both]=0;
+				zsx_Next[zsx_NextIndex++]=index;
 			}
 		}else
 		{
-			int n = last++;
+			int n = zsx_NextIndex?zsx_Next[--zsx_NextIndex]:last++;
 			zsx_Initial[n][0] = s;
 			zsx_Initial[n][1] = x;
 			zsx_Indexes[both] = n + 1;
 			zsx_Unknown[n+1] = 1;
 		}
-		if(last==zsx_top)
+		if(last==zsx_top&&zsx_NextIndex==0)
 		{
-			int codi[zsx_top];
-			int dico[zsx_top];
-			for(z=0,s=0,x=0;s<last;s++)if(zsx_Unknown[s+1])dico[s+1]=x++;
-			
 			for(s=0;s<1<<(zsx_bits*zsx_items);s++)
 			{
 				zsx_write_bit(bytes, zsx_Indexes[s]&&zsx_Unknown[zsx_Indexes[s]]?1:0);
 				if(zsx_Indexes[s]&&zsx_Unknown[zsx_Indexes[s]])
 				{
-					zsx_write_value(bytes, dico[zsx_Indexes[s]], zsx_lf(x));
-					zsx_Unknown[zsx_Indexes[s]]=0;
+					zsx_write_value(bytes, zsx_Indexes[s]-1, zsx_lf(last));
+					zsx_Unknown[zsx_Indexes[s]] = 0;
 				}
 				zsx_Indexes[s]=0;
+				
 			}
 			last = 0;
 		}
@@ -436,7 +388,7 @@ int test(char *filename) {
 		Compress(Compressor, zsx_bytes_buffer, zsx_bytes_read, NULL, 0, &csize);
 		Compress(Compressor, zsx_bytes_buffer, zsx_bytes_read, zsx_result_buffer, csize, &csize);
 
-		*((size_t *)zsx_result_buffer - 1) = csize;
+		zsx_len(zsx_result_buffer) = csize;
 		byte *data = zsx_encode(zsx_result_buffer);
 		size_t len_zsx = zsx_len(data);
 
@@ -444,13 +396,8 @@ int test(char *filename) {
 		while (len_zsx < prev_len)
 		{
 			prev_len = len_zsx;
-
-			Compress(Compressor, zsx_bytes_buffer, len_zsx, NULL, 0, &csize);
-			Compress(Compressor, zsx_bytes_buffer, len_zsx, zsx_result_buffer, csize, &csize);
-			*((size_t *)zsx_result_buffer - 1) = csize;
 			data = zsx_encode(zsx_result_buffer);
 			len_zsx = zsx_len(data);
-
 		}
 
 		//printf("final size: %ld.\n", len_zsx);
