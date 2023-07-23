@@ -133,9 +133,8 @@ int zsx_lf(unsigned long n) {
 #define zsx_items 3
 #define zsx_half 4
 #define zsx_top 256*256
-#define zsx_win 32*256
 
-int zsx_Initial[zsx_top][zsx_items];
+int zsx_Initial[zsx_top];
 int zsx_Indexes[zsx_top];
 
 char *zsx_bytes_buffer;
@@ -154,7 +153,7 @@ byte *zsx_encode(byte *data) {
 	printf(".");
 
 	int in = 0;
-	
+	int last = 0;
 	byte *exists = zsx_new(byte, zsx_values);
 	for(s=0;s<zsx_values;s++)
 		exists[s]=0;
@@ -173,33 +172,35 @@ byte *zsx_encode(byte *data) {
 
 		int hash = (z<<zsx_bits)^(s<<zsx_half)^x;
 		int index = zsx_Indexes[hash];
-		zsx_write_bit(bytes, exists[s] ? 1 : 0);
+		zsx_write_bit(bytes, index  && s==index-1 ? 1 : 0);
 
-		if (exists[s])
+		if (index  && s==index-1 )
 		{
 			zsx_write_value(bytes, s, zsx_bits);
-			zsx_write_bit(bytes, index?1:0);
-			if(index==0)
-			{
-				zsx_write_value(bytes, z, zsx_bits);
-				zsx_write_value(bytes, x, zsx_bits);			
-				zsx_Indexes[hash] = ++zsx_Id[s];
-			}else
-			{
-				zsx_write_value(bytes, index-1, zsx_lf(zsx_Id[s]));
-			}
 		}else
 		{
-				zsx_Initial[last][0] = z;
-				zsx_Initial[last][1] = s;
-				zsx_Initial[last][2] = x;
+			zsx_write_bit(bytes, index?1:0);
+			if(index)
+			{
+				zsx_write_value(bytes, index-1, zsx_bits);
+				zsx_write_value(bytes, s, zsx_bits);
+			}else
+			{
 				zsx_write_value(bytes, z, zsx_bits);
 				zsx_write_value(bytes, s, zsx_bits);
-				zsx_write_value(bytes, x, zsx_bits);			
-				exists[s] = 2;
-				zsx_Indexes[hash] = ++zsx_Id[s];
+				zsx_write_value(bytes, x, zsx_bits);
+				zsx_Indexes[hash] = s+1;
+				zsx_Initial[last++] = hash;
+			}
 		}
-
+		if(zsx_Id[s]>1)
+		{
+			for(s=0;s<last;s++)
+				zsx_Indexes[zsx_Initial[s]]=0,zsx_Initial[s]=0;
+			for(s=0;s<zsx_values;s++)
+				zsx_Id[s]=0;
+			last = 0;
+		}
 	}
 	zsx_flushWrite(bytes);
 	
@@ -280,7 +281,7 @@ byte *zsx_decode(byte *data) {
 		decoded++;
 		decoded++;
 		decoded++;
-		if(last==zsx_win)
+		if(last==256)
 		{
 			for(int index=0;index<last;index++)
 			{
