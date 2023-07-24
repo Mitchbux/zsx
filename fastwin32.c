@@ -133,6 +133,7 @@ int zsx_lf(unsigned long n) {
 #define zsx_items 3
 #define zsx_half 4
 #define zsx_top 256*256
+#define zsx_win 128*256
 
 int zsx_Initial[zsx_top];
 int zsx_Indexes[zsx_top];
@@ -154,10 +155,11 @@ byte *zsx_encode(byte *data) {
 
 	int in = 0;
 	int last = 0;
-	byte *exists = zsx_new(byte, zsx_values);
-	for(s=0;s<zsx_values;s++)
-		exists[s]=0;
-	
+	int *exists = zsx_new(int, zsx_values*16);
+	for (s = 0; s < zsx_values*16; s++)
+	{
+		exists[s] = 0;
+	}
 	for(s=0;s<zsx_top;s++)
 		zsx_Indexes[s]=0;
 	
@@ -172,36 +174,52 @@ byte *zsx_encode(byte *data) {
 
 		int hash = (z<<zsx_bits)^(s<<zsx_half)^x;
 		int index = zsx_Indexes[hash];
-		zsx_write_bit(bytes, index  && s==index-1 ? 1 : 0);
+		zsx_write_bit(bytes, index?1:0);
 
-		if (index  && s==index-1 )
+		if (index)
 		{
-			zsx_write_value(bytes, s, zsx_bits);
+			zsx_write_bit(bytes, zsx_Initial[hash] == s ? 1 : 0);
+			if (zsx_Initial[hash] == s )
+			{
+				zsx_write_value(bytes, s, zsx_bits);
+			}
+			else
+			{
+				zsx_write_value(bytes, zsx_Initial[hash], zsx_bits);
+				zsx_write_value(bytes, s, zsx_bits);
+			}
 		}else
 		{
-			zsx_write_bit(bytes, index?1:0);
-			if(index)
-			{
-				zsx_write_value(bytes, index-1, zsx_bits);
-				zsx_write_value(bytes, s, zsx_bits);
-			}else
-			{
-				zsx_write_value(bytes, z, zsx_bits);
-				zsx_write_value(bytes, s, zsx_bits);
-				zsx_write_value(bytes, x, zsx_bits);
-				zsx_Indexes[hash] = s+1;
-				zsx_Initial[last++] = hash;
-			}
+			zsx_write_value(bytes, s, zsx_bits);
+			if (exists[s])
+				zsx_Indexes[exists[s]] = 0;
+			zsx_Indexes[hash] = ++last;
+			zsx_Initial[hash] = s;
+			exists[s]=hash;
 		}
-		if(zsx_Id[s]>1)
+		if (last == zsx_win)
 		{
-			for(s=0;s<last;s++)
-				zsx_Indexes[zsx_Initial[s]]=0,zsx_Initial[s]=0;
-			for(s=0;s<zsx_values;s++)
-				zsx_Id[s]=0;
+			for (s = 0; s < zsx_top; s++)
+			{
+				zsx_write_bit(bytes, zsx_Indexes[s] ? 1 : 0);
+				if (zsx_Indexes[s])
+					zsx_write_value(bytes, zsx_Indexes[s] - 1, zsx_lf(last));
+				zsx_Indexes[s] = 0;
+			}
 			last = 0;
+			for (s = 0; s < zsx_values; s++)
+				exists[s] = 0;
 		}
 	}
+
+	for (s = 0; s < zsx_top; s++)
+	{
+		zsx_write_bit(bytes, zsx_Indexes[s] ? 1 : 0);
+		if (zsx_Indexes[s])
+			zsx_write_value(bytes, zsx_Indexes[s] - 1, zsx_lf(last));
+	}
+
+
 	zsx_flushWrite(bytes);
 	
 	printf("%d ", bytes->start);
@@ -223,22 +241,14 @@ byte *zsx_decode(byte *data) {
 	byte * result = zsx_bytes_buffer;
 	zsx_len(zsx_bytes_buffer) = size;
 
-	int items = size/3+((size%3)?1:0);
-	int *itemat = zsx_new(int, zsx_values);
-	int **itemin = zsx_new(int*, zsx_values);
-	int **sample = zsx_new(int*, zsx_values);
-	int *samplecount = zsx_new(int, zsx_values);
-	int *initial = zsx_new(int, zsx_values);
-	
-	for(x = 0; x < zsx_values; x++)
+
+	int **dico = zsx_new(int*, zsx_values);
+	for (s = 0; s < zsx_values; s++)
 	{
-		itemin[x] = zsx_new(int, 128*1024);
-		sample[x] = zsx_new(int, 128*1024);
-		samplecount[x] = 0;
-		itemat[x]=0;
-		initial[x]=-1;
+		dico[s] = zsx_new(int, 4);
 	}
-	
+
+
 	int decoded = 0;
 	int last = 0;
 
@@ -248,133 +258,42 @@ byte *zsx_decode(byte *data) {
 	{
 		if(zsx_read_bit(bytes))
 		{
-			int n = zsx_read_value(bytes, zsx_bits);			
-			itemin[n][samplecount[n]] = decoded;
-			sample[n][samplecount[n]++] = -1;
+			int n = zsx_read_value(bytes, zsx_bits);
+			result[decoded++] = dico[n][0];
+			result[decoded++] = dico[n][1];
+			result[decoded++] = dico[n][2];
 		}else
 		{
 			if(zsx_read_bit(bytes))
 			{
 				int n = zsx_read_value(bytes, zsx_bits);
-				itemin[n][samplecount[n]] = decoded;
-				sample[n][samplecount[n]++] = zsx_read_value(bytes, zsx_bits);
-			}else
-			if(zsx_read_bit(bytes))
-			{
-				int index = zsx_read_value(bytes, zsx_lf(last));
-				z = zsx_read_value(bytes, zsx_bits);
 				s = zsx_read_value(bytes, zsx_bits);
-				x = zsx_read_value(bytes, zsx_bits);
-				result[itemat[index]] = z;
-				result[itemat[index]+1] = s;
-				result[itemat[index]+2] = x;
-				if(initial[index]==-1)
-				{
-					initial[index] = (z<<zsx_bits)^x;
-				}
-				itemat[index] = decoded;
+				int h = (dico[n][0] << zsx_bits) ^ (dico[n][1] << zsx_half) ^ dico[n][2];
+				result[decoded++] = (h >> zsx_bits) ^ (s >> zsx_half);
+				result[decoded++] = s;
+				result[decoded++] = (h & 255) ^ ((s & 15) << zsx_half);
 			}else
-			{
-				itemat[last++] = decoded;
-			}
-		}
-		decoded++;
-		decoded++;
-		decoded++;
-		if(last==256)
-		{
-			for(int index=0;index<last;index++)
 			{
 				z = zsx_read_value(bytes, zsx_bits);
 				s = zsx_read_value(bytes, zsx_bits);
 				x = zsx_read_value(bytes, zsx_bits);
-				int hash = (z<<zsx_bits)^(s<<zsx_half)^x;
-				if(initial[index]>=0)
-				{
-					hash = initial[index]^(s<<zsx_half);
-				}
-
-				result[itemat[index]] = z;
-				result[itemat[index]+1] = s;
-				result[itemat[index]+2] = x;
-				for(int n =0;n<samplecount[s];n++)
-				{
-					int smpl = sample[s][n];
-					if (smpl==-1)
-					{
-						if(initial[index]>=0)
-						{
-							result[itemin[s][n]] = initial[index]>>zsx_bits;
-							result[itemin[s][n]+1] = s;
-							result[itemin[s][n]+2] = initial[index]&255;
-						}else
-						{
-							result[itemin[s][n]] = z;
-							result[itemin[s][n]+1] = s;
-							result[itemin[s][n]+2] = x;
-						}
-					}else
-					{
-						result[itemin[s][n]] = (hash>>zsx_bits) ^ (smpl>>zsx_half);
-						result[itemin[s][n]+1] = smpl;
-						result[itemin[s][n]+2] = (hash&255) ^ ((smpl&15)<<zsx_half);
-					}
-				}
-				initial[index] = -1;
-				samplecount[s] = 0;
-			}
-			last = 0;
-		}
-	}
-	for(int index=0;index<last;index++)
-	{
-		z = zsx_read_value(bytes, zsx_bits);
-		s = zsx_read_value(bytes, zsx_bits);
-		x = zsx_read_value(bytes, zsx_bits);
-		int hash = (z<<zsx_bits)^(s<<zsx_half)^x;
-		if(initial[index]>=0)
-		{
-			hash = initial[index]^(s<<zsx_half);
-		}
-		result[itemat[index]] = z;
-		result[itemat[index]+1] = s;
-		result[itemat[index]+2] = x;
-		
-		for(int n =0;n<samplecount[s];n++)
-		{
-			int smpl = sample[s][n];
-			if (smpl==-1)
-			{
-				if(initial[index]>=0)
-				{
-					result[itemin[s][n]] = initial[index]>>zsx_bits;
-					result[itemin[s][n]+1] = s;
-					result[itemin[s][n]+2] = initial[index]&255;
-				}else
-				{
-					result[itemin[s][n]] = z;
-					result[itemin[s][n]+1] = s;
-					result[itemin[s][n]+2] = x;
-				}
-			}else
-			{
-				result[itemin[s][n]] = (hash>>zsx_bits) ^ (smpl>>zsx_half);
-				result[itemin[s][n]+1] = smpl;
-				result[itemin[s][n]+2] = (hash&255) ^ ((smpl&15)<<zsx_half);
+				result[decoded++] = z;
+				result[decoded++] = s;
+				result[decoded++] = x;
+				
+					dico[s][0] = z;
+					dico[s][1] = s;
+					dico[s][2] = x;
 			}
 		}
 	}
 	result[decoded++]=0;
 	zsx_del(bytes);
-	for(x=0;x<zsx_values;x++)
+	for (s = 0; s < zsx_values; s++)
 	{
-		zsx_del(itemin[x]);
-		zsx_del(sample[x]);
+		zsx_del(dico[s]);
 	}
-	zsx_del(itemin);
-	zsx_del(sample);
-	zsx_del(itemat);
-	zsx_del(samplecount);
+	zsx_del(dico);
 	return result;
 }
 
@@ -532,14 +451,14 @@ int testdec(char *filename) {
 		byte * data = zsx_encode(zsx_result_buffer);
 		size_t len_zsx = zsx_len(data);
 
-		data = zsx_encode(zsx_result_buffer);
-		len_zsx = zsx_len(data);
+		//data = zsx_encode(zsx_result_buffer);
+		//len_zsx = zsx_len(data);
 
 		byte *decompressed = zsx_decode(data);
 		
-		memcpy(zsx_result_buffer, zsx_bytes_buffer, zsx_len(decompressed));
-		zsx_len(zsx_result_buffer) = zsx_len(decompressed);
-		decompressed = zsx_decode(zsx_result_buffer);
+		//memcpy(zsx_result_buffer, zsx_bytes_buffer, zsx_len(decompressed));
+		//zsx_len(zsx_result_buffer) = zsx_len(decompressed);
+		//decompressed = zsx_decode(zsx_result_buffer);
 		
 		puts(decompressed);
 		fwrite(decompressed, zsx_len(decompressed), 1, f);
