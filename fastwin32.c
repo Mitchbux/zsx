@@ -137,6 +137,8 @@ int zsx_lf(unsigned long n) {
 
 int zsx_Initial[zsx_top];
 int zsx_Indexes[zsx_top];
+int zsx_Next[zsx_values];
+int zsx_NextIndex;
 
 char *zsx_bytes_buffer;
 char *zsx_result_buffer;
@@ -163,16 +165,14 @@ byte *zsx_encode(byte *data) {
 	for(s=0;s<zsx_top;s++)
 		zsx_Indexes[s]=0;
 	
-	int *zsx_Id = zsx_new(int, zsx_values);
-	for(s=0;s<zsx_values;s++)
-		zsx_Id[s]=0;
+	zsx_NextIndex = 0;
 	
 	while (in < len) {
 		int z = data[in++];
 		int s = data[in++];
 		int x = data[in++];
 
-		int hash = (z<<zsx_bits)^(s<<zsx_half)^x;
+		int hash = (z<<2)^(s<<1)^x;
 		int index = zsx_Indexes[hash];
 		zsx_write_bit(bytes, index?1:0);
 
@@ -192,27 +192,18 @@ byte *zsx_encode(byte *data) {
 		{
 			zsx_write_value(bytes, s, zsx_bits);
 			if (exists[s])
+			{
+				zsx_write_value(bytes, exists[s], zsx_bits+2);
+				zsx_Next[zsx_NextIndex++]=zsx_Indexes[exists[s]];
 				zsx_Indexes[exists[s]] = 0;
-			zsx_Indexes[hash] = ++last;
+			}
+			zsx_Indexes[hash] = zsx_NextIndex? zsx_Next[--zsx_NextIndex]:++last;
 			zsx_Initial[hash] = s;
 			exists[s]=hash;
 		}
-		if (last == zsx_win)
-		{
-			for (s = 0; s < zsx_top; s++)
-			{
-				zsx_write_bit(bytes, zsx_Indexes[s] ? 1 : 0);
-				if (zsx_Indexes[s])
-					zsx_write_value(bytes, zsx_Indexes[s] - 1, zsx_lf(last));
-				zsx_Indexes[s] = 0;
-			}
-			last = 0;
-			for (s = 0; s < zsx_values; s++)
-				exists[s] = 0;
-		}
 	}
 
-	for (s = 0; s < zsx_top; s++)
+	for (s = 0; s < zsx_values*4; s++)
 	{
 		zsx_write_bit(bytes, zsx_Indexes[s] ? 1 : 0);
 		if (zsx_Indexes[s])
