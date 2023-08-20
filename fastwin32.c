@@ -131,7 +131,7 @@ int zsx_lf(unsigned long n) {
 	return m;
 }
 
-#define zsx_chunk_bits 19
+#define zsx_chunk_bits 17
 #define zsx_chunk (1<<zsx_chunk_bits)
 #define zsx_bits 8
 #define zsx_half 4
@@ -146,6 +146,7 @@ char *zsx_result_buffer;
 
 #define ZSX
 
+
 /****** zsx ******/
 byte *zsx_encode(byte *data) {
 	//printf(".");
@@ -155,52 +156,49 @@ byte *zsx_encode(byte *data) {
 	zsx_reader_t *reader = zsx_reader(data);
 	zsx_write_value(bytes, len, 32);
 	int *initial = zsx_new(int, zsx_top);
-	int *ordered = zsx_new(int, zsx_top);
 	int *indexes = zsx_new(int, zsx_top);
 	int *idx = zsx_new(int, zsx_top);
-	int *order = zsx_new(int, zsx_values);
-	int id , in = 0, next = 0, last = 1;
+	int *bad = zsx_new(int, zsx_top);
+	int id , in = 0, next = 0, last = 0, best = 0;
 	
 	for(int s=0;s<zsx_top;s++)
-		idx[s]=0, indexes[s]=0;
-	for(int s=0;s<zsx_values;s++)
-		order[s]=0;
+		bad[s] = 0, idx[s]=0, indexes[s]=0;
 	
 	while (in < len ) {
     int z = data[in++] , s = data[in++], x = data[in++], hash = (z<<zsx_bits) ^(s << zsx_half) ^ x;
 		
+			
 			if(idx[hash])
 			{
-				zsx_write_value(bytes, idx[hash]-1, zsx_lf(id));
-				
-				zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
-				if (initial[hash] != s){ initial[hash] = s;
-					zsx_write_value(bytes, s, zsx_bits);}		
-			}else
-			if(indexes[hash])
-			{
-				zsx_write_value(bytes, indexes[hash], zsx_bits);
-				zsx_write_value(bytes, hash, zsx_bits+zsx_bits);
-				zsx_write_value(bytes, ordered[hash], zsx_lf(order[indexes[hash]]));
-				indexes[hash] = 0;
-				idx[hash] = ++id;
-			
-				zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
-				if (initial[hash] != s){ initial[hash] = s;
-					zsx_write_value(bytes, s, zsx_bits);}		
-
+				zsx_write_bit(bytes,1);
+				zsx_write_value(bytes, idx[hash], zsx_lf(last));
+				if(idx[hash]<256)
+				if(indexes[idx[hash]])
+				{
+					zsx_write_value(bytes, hash, zsx_bits+zsx_bits);
+					indexes[idx[hash]]=0;
+					idx[hash]=++last;
+				}
 			}
 			else
 			{
-				zsx_write_value(bytes, s, zsx_bits);
-				initial[hash] = s;
-				s = next++;
-				if(next==256)next=0;
-				indexes[hash]=s;
-				ordered[hash]=order[s]++;
+				zsx_write_bit(bytes,0);
+				s = last==255?++next:++last;
+				if(next==255) next = 0;
+				if(indexes[s])
+				{
+					zsx_write_value(bytes, indexes[s], zsx_bits+zsx_bits);
+					idx[indexes[s]]=0;
+				}
+				idx[hash]=s;
+				indexes[s]=hash;
 			}
+				zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
+				if (initial[hash] != s){ initial[hash] = s;
+					zsx_write_value(bytes, s, zsx_bits);}		
 	}
-				
+	
+	
 	zsx_flushWrite(bytes);
 	zsx_len(zsx_result_buffer) = bytes->start;
 	result = zsx_result_buffer;
@@ -208,9 +206,8 @@ byte *zsx_encode(byte *data) {
 
 	zsx_del(initial);
 	zsx_del(indexes);
-	zsx_del(ordered);
-	zsx_del(order);
 	zsx_del(idx);
+	zsx_del(bad);
 	
 	zsx_del(reader);
 	zsx_del(bytes);
