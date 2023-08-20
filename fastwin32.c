@@ -12,7 +12,6 @@
 #include <windows.h>
 #include <compressapi.h>
 
-
 /* -------- aux stuff ---------- */
 
 typedef uint8_t byte;
@@ -42,7 +41,7 @@ void zsx_clear(void *m) {
 #define zsx_del(m) free((size_t *)(m)-2);
 #define zsx_len(m) *((size_t *)m - 1)
 #define zsx_setsize(m, n) m = (byte *)zsx_extend(m, n)
-#define zsx_extend(m) m = (byte *)zsx_extend(m, _len(m) * 2);
+#define zsx_extend(m) m = (byte *)zsx_extend(m, zsx_len(m) * 2);
 
 /*--------- bit reader/writer---------*/
 
@@ -51,6 +50,7 @@ typedef struct {
 	int bits;
 	int start;
 	char *data;
+  int canextend;
 } zsx_writer_t;
 
 void zsx_write_bit(zsx_writer_t *p, int v) {
@@ -59,6 +59,8 @@ void zsx_write_bit(zsx_writer_t *p, int v) {
 		p->data[p->start++] = p->bits;
 		p->power = 0;
 		p->bits = 0;
+		if(p->canextend&&((zsx_len(p->data))-p->start)<sizeof(int))
+			zsx_extend(p->data);
 	}
 }
 
@@ -100,12 +102,16 @@ unsigned int zsx_read_value(zsx_reader_t *r, int n) {
 	return v;
 }
 
-zsx_writer_t *zsx_writer(byte *out) {
+#define zsx_extendable 1
+#define zsx_statically 0
+
+zsx_writer_t *zsx_writer(byte *out, int ext) {
 	zsx_writer_t *r = zsx_new(zsx_writer_t, 1);
 	r->power = 0;
 	r->bits = 0;
 	r->start = 0;
 	r->data = (char *)out;
+	r->canextend = ext;
 	return r;
 }
 
@@ -130,8 +136,8 @@ int zsx_lf(unsigned long n) {
 #define zsx_bits 8
 #define zsx_half 4
 #define zsx_values 256
-#define zsx_items 2
-#define zsx_top 4096
+#define zsx_items 3
+#define zsx_top 256*256
 
 char *zsx_bytes_buffer;
 char *zsx_result_buffer;
@@ -142,49 +148,70 @@ char *zsx_result_buffer;
 
 /****** zsx ******/
 byte *zsx_encode(byte *data) {
+	//printf(".");
 	int len = zsx_len(data);
 	byte *result;
-	zsx_writer_t *bytes = zsx_writer(zsx_bytes_buffer);
+	zsx_writer_t *bytes = zsx_writer(zsx_bytes_buffer, 0);
 	zsx_reader_t *reader = zsx_reader(data);
 	zsx_write_value(bytes, len, 32);
 	int *initial = zsx_new(int, zsx_top);
-	int *indexes = zsx_new(int, zsx_top);	
-	int *id = zsx_new(int, 16);
-	int **idx = zsx_new(int*, 16);
-	int *ltt = zsx_new(int, 16);
-	int in = 0, last = 0, next = 0;
+	int *ordered = zsx_new(int, zsx_top);
+	int *indexes = zsx_new(int, zsx_top);
+	int *idx = zsx_new(int, zsx_top);
+	int *order = zsx_new(int, zsx_values);
+	int id , in = 0, next = 0, last = 1;
+	
+	for(int s=0;s<zsx_top;s++)
+		idx[s]=0, indexes[s]=0;
+	for(int s=0;s<zsx_values;s++)
+		order[s]=0;
+	
+	while (in < len ) {
+    int z = data[in++] , s = data[in++], x = data[in++], hash = (z<<zsx_bits) ^(s << zsx_half) ^ x;
+		
+			if(idx[hash])
+			{
+				zsx_write_value(bytes, idx[hash]-1, zsx_lf(id));
+				
+				zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
+				if (initial[hash] != s){ initial[hash] = s;
+					zsx_write_value(bytes, s, zsx_bits);}		
+			}else
+			if(indexes[hash])
+			{
+				zsx_write_value(bytes, indexes[hash], zsx_bits);
+				zsx_write_value(bytes, hash, zsx_bits+zsx_bits);
+				zsx_write_value(bytes, ordered[hash], zsx_lf(order[indexes[hash]]));
+				indexes[hash] = 0;
+				idx[hash] = ++id;
+			
+				zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
+				if (initial[hash] != s){ initial[hash] = s;
+					zsx_write_value(bytes, s, zsx_bits);}		
 
-	for (int s = 0; s < zsx_top; s++) initial[s] = indexes[s] = 0;
-	for (int s = 0; s < 16; s++) id[s]=0, idx[s] = zsx_new(int, zsx_top), ltt[s]=0; 
-	for (int s = 0; s < 16; s++) for (int x = 0; x < zsx_top; x++) idx[s][x] = 0; 
-	
-	
-	while (reader->start <= len) {
-		int s = zsx_read_value(reader, zsx_bits), x = zsx_read_value(reader, zsx_bits), hash = (s << zsx_half) ^ x;
-		if(indexes[hash]){
-			zsx_write_value(bytes, indexes[hash], zsx_bits);
-			zsx_write_bit(bytes, initial[hash] != s ? 1 : 0);
-			if (initial[hash] != s){ initial[hash] = s;
-				zsx_write_value(bytes, s, zsx_half);}		
-		}else{
-			zsx_write_value(bytes, s>>zsx_half, zsx_half);
-			indexes[hash]=s>>zsx_half;initial[hash]=s;
-			zsx_write_bit(bytes, idx[s>>zsx_half][hash]?1:0);
-			if(idx[s>>zsx_half][hash]) zsx_write_value(bytes, idx[s>>zsx_half][hash]-1, zsx_lf(ltt[s>>zsx_half]));
-			else idx[s>>zsx_half][hash]=++ltt[s>>zsx_half], zsx_write_value(bytes, hash, zsx_bits+zsx_half);
-			if(id[s>>zsx_half]) indexes[id[s>>zsx_half]]=0; id[s>>zsx_half] = hash;		
-		}
+			}
+			else
+			{
+				zsx_write_value(bytes, s, zsx_bits);
+				initial[hash] = s;
+				s = next++;
+				if(next==256)next=0;
+				indexes[hash]=s;
+				ordered[hash]=order[s]++;
+			}
 	}
+				
 	zsx_flushWrite(bytes);
-	*((size_t *)zsx_result_buffer - 1) = bytes->start;
+	zsx_len(zsx_result_buffer) = bytes->start;
 	result = zsx_result_buffer;
 	memcpy(result, bytes->data, bytes->start);
-	zsx_del(indexes);
+
 	zsx_del(initial);
-	for(int s=0;s<16;s++)zsx_del(idx[s]);
+	zsx_del(indexes);
+	zsx_del(ordered);
+	zsx_del(order);
 	zsx_del(idx);
-	zsx_del(ltt);
-	zsx_del(id);
+	
 	zsx_del(reader);
 	zsx_del(bytes);
 	return zsx_result_buffer;
@@ -220,7 +247,6 @@ byte *zsx_decode(byte *data) {
 	return zsx_result_buffer;
 }
 
-
 void BackLine() {
 	CONSOLE_SCREEN_BUFFER_INFO *info = zsx_new(CONSOLE_SCREEN_BUFFER_INFO, 1);
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), info);
@@ -236,9 +262,12 @@ void CALLBACK FIO(DWORD E1, DWORD N2, LPOVERLAPPED ol) {
 	zsx_bytes_read = N2;
 }
 
+
 int test(char *filename) {
 
-	zsx_init
+	// *** encoding file chunk by chunk ***
+	
+	//win32 file handling
 	
 	OVERLAPPED ol;
 	ol.Offset = 0;
@@ -264,7 +293,8 @@ int test(char *filename) {
 
 	char *outfilename = zsx_new(char, 256);
 	strcpy(outfilename, filename);
-	strcat(outfilename, ".tmp");
+	strcat(outfilename, ".zsx");
+
 	FILE *f = fopen(outfilename, "wb");
 
 	if (f == NULL) {
@@ -274,7 +304,11 @@ int test(char *filename) {
 
 	printf("\nEncoding...\n");
 
+	zsx_init
+
 	while (encoded < file_size) {
+		
+		//win32 buffered read
 		ReadFileEx(hFile, zsx_result_buffer, zsx_chunk, &ol, FIO);
 		SleepEx(INFINITE, TRUE);
 		encoded += zsx_bytes_read;
@@ -282,11 +316,12 @@ int test(char *filename) {
 		int prev_len = zsx_bytes_read;
 
 
+		//zsx encoding
 		zsx_len(zsx_result_buffer) = zsx_bytes_read;
 		byte *data = zsx_encode(zsx_result_buffer);
 		size_t len_zsx = zsx_len(data);
 
-
+		//as much as it can
 		while (prev_len > len_zsx)
 		{
 			prev_len = len_zsx;
@@ -294,6 +329,8 @@ int test(char *filename) {
 			len_zsx = zsx_len(data);
 
 		}
+	
+		//c-like file writing
 		fwrite(&len_zsx, sizeof(size_t), 1, f);
 		fwrite(data, len_zsx, 1, f);
 		BackLine();
@@ -303,6 +340,12 @@ int test(char *filename) {
 	fclose(f);
 	CloseHandle(hFile);
 
+	//CloseCompressor(Compressor);
+
+	//*** re-encoding the whole file to a minimum set of data ***
+
+	//win32 file handling
+	
 	ol.Offset = 0;
 	ol.OffsetHigh = 0;
 
@@ -323,57 +366,16 @@ int test(char *filename) {
 	encoded = 0;
 	file_size = GetFileSize(hFile, &file_high);
 
-	#undef zsx_chunk_bits
-	#define zsx_chunk_bits 26
-	zsx_init
-
-	outfilename = zsx_new(char, 256);
-	strcpy(outfilename, filename);
-	strcat(outfilename, ".zsx");
-	f = fopen(outfilename, "wb");
-
-	if (f == NULL) {
-		printf("Can't create file!\n");
-		return 0;
-	};
-
-	printf("\nFinalizing...\n");
-
-
-	while (encoded < file_size) {
-		ReadFileEx(hFile, zsx_result_buffer, zsx_chunk, &ol, FIO);
-		SleepEx(INFINITE, TRUE);
-		encoded += zsx_bytes_read;
-		ol.Offset += zsx_bytes_read;
-		int prev_len = zsx_bytes_read;
-
-		zsx_len(zsx_result_buffer) = zsx_bytes_read;
-		byte *data = zsx_encode(zsx_result_buffer);
-		size_t len_zsx = zsx_len(data);
-
-
-		while (prev_len > len_zsx)
-		{
-			prev_len = len_zsx;
-			data = zsx_encode(zsx_result_buffer);
-			len_zsx = zsx_len(data);
-		}
-
-		fwrite(&len_zsx, sizeof(size_t), 1, f);
-		fwrite(data, len_zsx, 1, f);
-	}
-
-	fclose(f);
-	CloseHandle(hFile);
-
 	printf("Compressed to %s.\n", outfilename);
+	
 	return 1;
 }
 
 int testdec(char *filename) {
 
-	zsx_init
-	
+	//*** Testing Encoding and Decoding ***
+
+	//win32 file handling
 	OVERLAPPED ol;
 	ol.Offset = 0;
 	ol.OffsetHigh = 0;
@@ -407,12 +409,10 @@ int testdec(char *filename) {
 	};
 
 
-	COMPRESSOR_HANDLE Compressor = NULL;
-	CreateCompressor(2, NULL, &Compressor);
-
-	DECOMPRESSOR_HANDLE Decompressor = NULL;
-	CreateDecompressor(2, NULL, &Decompressor);
-
+	//zsx library has a few set of macros.
+	//this one takes care of everything about initialization
+	zsx_init
+	
 	while (encoded < file_size) {
 		ReadFileEx(hFile, zsx_result_buffer, zsx_chunk, &ol, FIO);
 		SleepEx(INFINITE, TRUE);
@@ -421,6 +421,7 @@ int testdec(char *filename) {
 
 	printf("\nEncoding twice...\n");
 	
+		//zsx_len is a dereferenced pointer can be used as left-op or right-op and describes the size of allocated memory 
 		zsx_len(zsx_result_buffer) = zsx_bytes_read;
 		byte * data = zsx_encode(zsx_result_buffer);		
 		data = zsx_encode(data);
@@ -431,11 +432,10 @@ int testdec(char *filename) {
 		decompressed = zsx_decode(decompressed);
 		
 		puts(decompressed);
+		//zsx_len contains the size of the data but not what was actually allocated at first. 
+		// !! Caution !! do not use these macro for any other context than compression.
 		fwrite(decompressed, zsx_len(decompressed), 1, f);
 	}
-
-	CloseCompressor(Compressor);
-	CloseDecompressor(Decompressor);
 
 	fclose(f);
 	CloseHandle(hFile);
@@ -446,12 +446,17 @@ int testdec(char *filename) {
 	return 1;
 }
 
+
 int main(int argc, char **argv) {
+
 	if (argc < 2)
 		printf("Usage : %s [-d] filename\n", argv[0]);
+
 	else if (argc == 2)
 		test(argv[1]);
+
 	else if (argv[1][0] == '-' && argv[1][1] == 'd')
 		testdec(argv[2]);
 	return 0;
+
 }
