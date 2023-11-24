@@ -131,113 +131,127 @@ int zsx_lf(unsigned long n) {
   return m;
 }
 
-#define zsx_big 1024*1024*1000
-#define zsx_sml 125*1000
+#define zsx_chunk 1024*1024*1024
 #define zsx_bit 8
 #define zsx_hlf 4
-#define zsx_min 1024
 #define zsx_hsh 256*256
 #define zsx_top 256*64
-
+#define zsx_min 256
 
 byte *zsx_bytes_buffer;
 byte *zsx_result_buffer;
-int zsx_chunk;
 
-#define zsx_init zsx_bytes_buffer = zsx_new(byte, zsx_chunk); zsx_result_buffer = zsx_new(byte, zsx_chunk);
+#define zsx_init zsx_bytes_buffer = zsx_new(byte, zsx_chunk); zsx_result_buffer = zsx_new(byte, zsx_chunk); 
+
 
 
 /****** zsx ******/
 byte *zsx_encode(byte *data) {
   int length = zsx_len(data);
-  int z, s, x, k, v, n, a, b;
+  int z, s, x;
   byte *result;
   zsx_writer_t *bytes = zsx_writer(zsx_bytes_buffer, zsx_extendable);
   zsx_write_value(bytes, length, 32);
 
   printf(".");
-
+  
   int *indexes = zsx_new(int, zsx_hsh);
+  int *recurse = zsx_new(int, zsx_hsh);
+  int *reverse = zsx_new(int, zsx_hsh);
   int *initial = zsx_new(int, zsx_hsh);
-  int *unknown = zsx_new(int, zsx_hsh);
-
-int *idx = zsx_new(int, zsx_hsh);
-  int last = 0,next = 0, stop, full = 0;
-while (stop < length) {
-    z = data[stop++];
-    s = data[stop++];
-    x = data[stop++];
-    int hash = (z << zsx_bit) ^ (s << zsx_hlf) ^ x;
-    indexes[hash]=1;
-}
-for(s=0;s<zsx_hsh&&last<zsx_top;s++)
-{
-	zsx_write_bit(bytes, indexes[s]);
-	if(indexes[s])indexes[s]=++last;
-}
-int max = s - 1;
-for(;s<zsx_hsh;s++)
-	indexes[s]=0;
-  zsx_clear(idx);
-    int won = 0;
- while (full < length) {
-    z = data[full++];
-    s = data[full++];
-    x = data[full++];
-    int hash = (z << zsx_bit) ^ (s << zsx_hlf) ^ x;
-    won += zsx_bit + zsx_bit + zsx_bit;
-	if (idx[hash])
-	{
-		zsx_write_bit(bytes, 1);
-		zsx_write_value(bytes, idx[hash]-1, zsx_lf(next));
-		won -= zsx_lf(last);
-	}
-    else
-    {
-		zsx_write_bit(bytes, 0);
-		zsx_write_bit(bytes, hash>max?1:0);
-		if(hash>max)
-		{
-			zsx_write_value(bytes, hash, zsx_bit+zsx_bit);
-			won -= zsx_bit+zsx_bit;
-		}else
-        {
-			zsx_write_value(bytes, indexes[hash]-1, zsx_lf(last));
-			won -= zsx_lf(last);
-	    }
-		idx[hash]=++next;
-		unknown[next]=hash;
-        
-    }
-	if(initial[hash]!=s)
-	{
-      zsx_write_value(bytes, s, zsx_bit);
-      won -= zsx_bit;
-	}
-    initial[hash] = s;
-	if(won>zsx_hsh)
-	{
-		for(;next>zsx_min;next--)
-		{
-			idx[unknown[next]]=0;
-		}
-		won=0;
-	}
-
+  
+  int full = 0;
+  int stop = 0;
+  int next = 0;
+  int last = 0;
+  zsx_clear(indexes);
+  zsx_clear(initial);
+ 
+  while(stop<length&&next<zsx_top)
+  {
+		z = data[stop++];
+		s = data[stop++];
+		x = data[stop++];
+		int hash = (z>>zsx_bit)^(s<<zsx_hlf)^x;	  
+		if(indexes[hash]==0)
+			indexes[hash]=++next;
   }
-
-  zsx_del(indexes);
-  zsx_del(initial);
-  zsx_del(unknown);
-  zsx_del(idx);
+  
+  zsx_write_value(bytes, next, zsx_bit+zsx_bit);
+  zsx_write_value(bytes, stop-1, zsx_lf(length));
+  for(s=0;s<zsx_hsh;s++)
+  {
+	  zsx_write_bit(bytes, indexes[s]?1:0);
+	  if(indexes[s])
+	  {
+		  zsx_write_value(bytes,indexes[s]-1, zsx_lf(next));
+		  reverse[indexes[s]]=s;
+	  }
+  }
+  zsx_clear(recurse);
+  while(full<length)
+  {
+		z = data[full++];
+		s = data[full++];
+		x = data[full++];
+		int hash = (z>>zsx_bit)^(s<<zsx_hlf)^x;
+		zsx_write_bit(bytes, recurse[hash]?1:0);
+		if(recurse[hash])
+			zsx_write_value(bytes, recurse[hash]-1, zsx_lf(last));
+		else
+		{
+			zsx_write_value(bytes, indexes[hash]-1, zsx_lf(next));
+			last = 0;
+			for(s=indexes[hash];s<indexes[hash]+256;s++)
+				recurse[reverse[s]]=++last;
+		}
+		if(full==stop&&full<length)
+		{
+			next = 0;
+			zsx_clear(indexes);
+		  while(stop<length&&next<zsx_top)
+		  {
+				z = data[stop++];
+				s = data[stop++];
+				x = data[stop++];
+				int hash = (z>>zsx_bit)^(s<<zsx_hlf)^x;	  
+				if(indexes[hash]==0)
+					indexes[hash]=++next;
+		  }
+			
+			zsx_write_value(bytes, next, zsx_bit+zsx_bit);	  
+			zsx_write_value(bytes, stop-1, zsx_lf(length));	  
+		  for(s=0;s<zsx_hsh;s++)
+		  {
+			  zsx_write_bit(bytes, indexes[s]?1:0);
+			  if(indexes[s])
+			  {
+				  zsx_write_value(bytes,indexes[s]-1, zsx_lf(next));
+				  reverse[indexes[s]]=s;
+			  }
+		  }
+		  zsx_clear(recurse);
+		  last = 0;
+		}
+		
+		zsx_write_bit(bytes, initial[hash]!=s?1:0);
+		if(initial[hash]!=s)
+			zsx_write_value(bytes, s, zsx_bit);
+		initial[hash]=s;
+  }
   
   zsx_flushWrite(bytes);
+  
+ 	zsx_del(indexes);
+	zsx_del(reverse);
+	zsx_del(recurse);
+	zsx_del(initial);
+	
   result = zsx_result_buffer;
   zsx_len(result) = bytes->start;
   memcpy(result, bytes->data, bytes->start);
-
-  //zsx_del(reader);
   zsx_del(bytes);
+  
   return result;
 }
 
@@ -246,19 +260,48 @@ byte *zsx_decode(byte *data) {
   unsigned int z, s, x, size = zsx_read_value(bytes, 32);
 
   byte * result = zsx_bytes_buffer;
-
+  
   int *dico = zsx_new(int, zsx_hsh);
+  int *indexes = zsx_new(int, zsx_hsh);
   int *initial = zsx_new(int, zsx_hsh);
-
   int decoded = 0;
   int last = 0;
-  int won = 0;
+  int next = 0;
+  
+  for(s=0;s<zsx_hsh;s++)
+	  indexes[s]=zsx_read_bit(bytes);
+  
   while (decoded < size)
   {
-
+	 int hash;
+	 if(zsx_read_bit(bytes))
+		hash=dico[zsx_read_value(bytes, zsx_lf(last))];
+	 else
+	 {
+		int mask = zsx_read_value(bytes, zsx_bit)<<zsx_bit;
+		int start = last;
+			for(int h = mask; h < zsx_hsh && h < mask + zsx_min; h++)
+				if(indexes[h])
+					dico[last++]=h;
+		hash = dico[zsx_read_value(bytes, zsx_lf(last-start))+start];
+		next++;
+	 }
+	 
+	 if(next==64)
+	 {
+		 last=next=0;
+	 }
+	 
+	 if(zsx_read_bit(bytes))
+		 initial[hash]=zsx_read_value(bytes, zsx_bit);
+	 s = initial[hash];
+	 result[decoded++] = (hash>>zsx_bit) ^ (s>>zsx_hlf);
+	 result[decoded++] = s;
+	 result[decoded++] = (hash&255) ^ ((s&15)<<zsx_hlf);
   }
 
   zsx_del(dico);
+  zsx_del(indexes);
   zsx_del(initial);
 
   zsx_del(bytes);
@@ -270,12 +313,12 @@ byte *zsx_decode(byte *data) {
 }
 
 void BackLine() {
-  CONSOLE_SCREEN_BUFFER_INFO *info = zsx_new(CONSOLE_SCREEN_BUFFER_INFO, 1);
-  GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), info);
-  COORD XY;
-  XY.X = 0;
-  XY.Y = info->dwCursorPosition.Y;
-  SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), XY);
+	CONSOLE_SCREEN_BUFFER_INFO *info = zsx_new(CONSOLE_SCREEN_BUFFER_INFO, 1);
+	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), info);
+	COORD XY;
+	XY.X = 0;
+	XY.Y = info->dwCursorPosition.Y;
+	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), XY);
 }
 
 int zsx_bytes_read;
@@ -326,7 +369,6 @@ int test(char *filename) {
 
   printf("\nEncoding...\n");
 
-  zsx_chunk = zsx_big;
   zsx_init
     while (encoded < file_size) {
 
@@ -335,19 +377,18 @@ int test(char *filename) {
       SleepEx(INFINITE, TRUE);
       encoded += zsx_bytes_read;
       ol.Offset += zsx_bytes_read;
-      int prev_len = zsx_bytes_read;
+      int prev_len = zsx_bytes_read+1;
 
       //zsx encoding
       zsx_len(zsx_result_buffer) = zsx_bytes_read;
-      size_t len_zsx = zsx_bytes_read - 1;
-
-      for (int z = 0; prev_len > len_zsx; z++)
-      {
-        prev_len = len_zsx;
-        zsx_encode(zsx_result_buffer);
-        len_zsx = zsx_len(zsx_result_buffer);
-      }
-
+	  size_t len_zsx = zsx_bytes_read;
+      for(int z=0;prev_len>len_zsx;z++)
+	  {
+		  prev_len = len_zsx;
+		  zsx_encode(zsx_result_buffer);
+		  len_zsx = zsx_len(zsx_result_buffer);
+	  }
+	  
       //c-like file writing
       fwrite(&len_zsx, sizeof(size_t), 1, f);
       fwrite(zsx_result_buffer, len_zsx, 1, f);
@@ -401,7 +442,6 @@ int testdec(char *filename) {
   };
 
 
-  zsx_chunk = zsx_big;
   //zsx library has a few set of macros.
   //this one takes care of everything about initialization
   zsx_init
