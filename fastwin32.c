@@ -1,5 +1,9 @@
+
+
 /* compile :
+
  tcc fastwin32.c -lcabinet -o shrink.exe
+
 */
 #include <fcntl.h>
 #include <math.h>
@@ -11,6 +15,7 @@
 #include <sys/types.h>
 #include <windows.h>
 #include <compressapi.h>
+
 
 /* -------- aux stuff ---------- */
 
@@ -125,6 +130,7 @@ zsx_reader_t *zsx_reader(byte *in) {
 	return r;
 }
 
+//Logarithm function : returns the number of bits needed to store a maximum value not reached
 int zsx_lf(uint64_t n) {
 	int m = 1;
 	while ((uint64_t)(1 << m) < n)
@@ -132,152 +138,234 @@ int zsx_lf(uint64_t n) {
 	return m;
 }
 
-#define zsx_chunk 16*1024*1024
+//merge sort : writes a bit when compairing two values so the algorithme can be done backwards
 
-byte *zsx_bytes_buffer;
+void zsx_merge (zsx_writer_t *w, int *a, int n, int m) {
+    int i, j, k;
+    int *x = malloc(n * sizeof (int));
+    for (i = 0, j = m, k = 0; k < n; k++) {
+		if(j<n&&i<m&&w)zsx_write_bit(w, a[j]<a[i]?1:0);
+        x[k] = j == n      ? a[i++]
+             : i == m      ? a[j++]
+             : a[j] < a[i] ? a[j++]
+             :               a[i++];
+    }
+    for (i = 0; i < n; i++) {
+        a[i] = x[i];
+    }
+    free(x);
+}
+
+void zsx_merge_sort (zsx_writer_t *w, int *a, int n) {
+    if (n < 2)
+        return;
+    int m = n / 2;
+    zsx_merge_sort(w, a, m);
+    zsx_merge_sort(w, a + m, n - m);
+    zsx_merge(w, a, n, m);
+}
+
+void zsx_merge_read (zsx_reader_t *r, int *a, int n, int m) {
+    int i, j, k;
+    int *x = malloc(n * sizeof (int));
+    for (i = 0, j = m, k = 0; k < n; k++) {
+        x[k] = j == n      ? a[i++]
+             : i == m      ? a[j++]
+             : zsx_read_bit(r) ? a[j++]
+             :               a[i++];
+    }
+    for (i = 0; i < n; i++) {
+        a[i] = x[i];
+    }
+    free(x);
+}
+
+void zsx_merge_sort_read (zsx_reader_t *r, int *a, int n) {
+    if (n < 2)
+        return;
+    int m = n / 2;
+    zsx_merge_sort_read(r, a, m);
+    zsx_merge_sort_read(r, a + m, n - m);
+    zsx_merge_read(r, a, n, m);
+}
+
+#define zsx_chunk 4096*4096
+
 byte *zsx_result_buffer;
-byte *zsx_compress_buffer;
+byte *zsx_bytes_buffer;
+byte *zsx_key_buffer;
 
-#define zsx_init zsx_result_buffer = zsx_new(byte, zsx_chunk); zsx_bytes_buffer = zsx_new(byte, zsx_chunk); zsx_compress_buffer = zsx_new(byte, zsx_chunk*2);
-#define zsx_exit zsx_del(zsx_result_buffer);  zsx_del(zsx_bytes_buffer); zsx_del(zsx_compress_buffer);
+#define zsx_init zsx_result_buffer = zsx_new(byte, zsx_chunk); zsx_bytes_buffer = zsx_new(byte, zsx_chunk); zsx_key_buffer = zsx_new(byte, zsx_chunk);
+#define zsx_exit zsx_del(zsx_result_buffer);  zsx_del(zsx_bytes_buffer);  zsx_del(zsx_key_buffer); 
 
 /****** zsx ******/
 byte *zsx_encode(byte *data) {
 	int length = zsx_len(data);
-	int z, s, x, k;
+	int z, s, x;
 	byte *result = zsx_result_buffer;
-	zsx_writer_t *compress = zsx_writer(zsx_compress_buffer, zsx_statically);
-	zsx_writer_t *bytes = zsx_writer(zsx_bytes_buffer, zsx_statically);
-	zsx_reader_t *reader = zsx_reader(data);
-	zsx_write_value(compress, length, 32);
+	byte *bytes = zsx_bytes_buffer;
+	zsx_writer_t*key = zsx_writer(zsx_key_buffer, zsx_statically);
+	
+	zsx_write_value(key, length, 32);
 
-	int full=0, next=0, stop=0;
-	int *stacker = zsx_new(int, 256*256);
-	int *reverse = zsx_new(int, 256*256);
-	while(stop<length){
-		zsx_clear(stacker);
-		zsx_clear(reverse);
-		next=0;
+	int full = 0, stop=0, next=0, last=0, start=0;
+
+	int *stacker = zsx_new(int, 0x100);
+	int *counter = zsx_new(int, 0x100);
+	int *reverse = zsx_new(int, 0x100);
+	int *indexes = zsx_new(int, 0x100);
+	zsx_clear(stacker);
+	zsx_clear(counter);
 	while(stop<length)
 	{
-		x=(data[stop++]<<8)^data[stop++];
-		zsx_write_bit(compress, stacker[x]?1:0);
-		if(stacker[x])
+		z=data[stop++];
+		zsx_write_bit(key, stacker[z]?1:0);
+		if(stacker[z]==0)
 		{
-			zsx_write_value(bytes, x, 16);
-			reverse[x]=0;
-		}
-		else 
-		{
-		stacker[x]=++next;
-		reverse[x]=1;
-		}
-		if(next==4096)break;
+			stacker[z]=next?indexes[--next]:++last;
+			if(next<64)
+			for(s=0;s<256;s++)
+			if(counter[s])indexes[next++]=s, counter[s]=0;
+			zsx_write_value(key, z, 8);
+			if(stacker[z]<last)
+				stacker[reverse[stacker[z]]]=0;
+			reverse[stacker[z]]=z;
+		}else
+			bytes[start++]=stacker[z], counter[stacker[z]]++;
+
 	}
-	}
-	for(s=0;s<256*256;s++){
-	if(stacker[s])
-	{
-		zsx_write_bit(compress, reverse[s]);
-		if(reverse[s])zsx_write_value(compress, s, 16);
-		zsx_write_value(compress, stacker[s], zsx_lf(next));
-	}}
 	zsx_del(stacker);
+	zsx_del(counter);
+	zsx_del(reverse);
+	zsx_del(indexes);
 
-
-	zsx_flushWrite(compress);
 	COMPRESSOR_HANDLE Compressor = NULL;
 	CreateCompressor(3, NULL, &Compressor);
 	size_t csize;
-	Compress(Compressor, compress->data, compress->start, NULL, 0, &csize);
-	byte *mszip = zsx_new(byte, csize);
-	Compress(Compressor, compress->data, compress->start, mszip, csize, &csize);
+	Compress(Compressor, bytes, start, NULL, 0, &csize);
+	result+=sizeof(size_t);
+	Compress(Compressor, bytes, start, result, csize, &csize);
+	*(size_t*)zsx_result_buffer=csize;
+	zsx_flushWrite(key);
+	size_t ksize;
+	Compress(Compressor, key->data, key->start, NULL, 0, &ksize);
+	Compress(Compressor, key->data, key->start, result+csize, ksize, &ksize);
 	CloseCompressor(Compressor);
-
-	Compressor = NULL;
-	CreateCompressor(2, NULL, &Compressor);
-
-	size_t csize2;
-	Compress(Compressor, bytes->data, bytes->start, NULL, 0, &csize2);
-	byte *mszip2 = zsx_new(byte, csize2);
-	Compress(Compressor, bytes->data, bytes->start, mszip2, csize2, &csize2);
-	CloseCompressor(Compressor);
-
-	memcpy(result, mszip, csize);
-	result+=csize;
-	memcpy(result, mszip2, csize2);
-	result+=csize2;
-	zsx_del(mszip);
-	zsx_del(compress);
-
-	zsx_len(zsx_result_buffer) = result-zsx_result_buffer;
+	zsx_len(zsx_result_buffer) = csize+ksize+sizeof(size_t);
 	return zsx_result_buffer;
 }
 
 byte *zsx_decode(byte *data) {
-	DECOMPRESSOR_HANDLE Decompressor = NULL;
-	CreateDecompressor(2, NULL, &Decompressor);
-
-	int len = zsx_len(data);
+	size_t xpress_len = *(size_t*)data;
+	byte * xpress = data + sizeof(size_t);
 	size_t dsize;
-	Decompress(Decompressor, data, len, NULL, 0, &dsize);
-	byte *buffer = zsx_new(byte, dsize);
-	Decompress(Decompressor, data, len, buffer, dsize, &dsize);
 
+	DECOMPRESSOR_HANDLE Decompressor = NULL;
+	CreateDecompressor(3, NULL, &Decompressor);
+	Decompress(Decompressor, xpress, xpress_len, NULL, 0, &dsize);
+	byte *buffer = zsx_new(byte, dsize);
+	Decompress(Decompressor, xpress, xpress_len, buffer, dsize, &dsize);
+
+	int len = zsx_len(data) - sizeof(size_t) - xpress_len;
+	byte *keyxpress = data + sizeof(size_t) + xpress_len;
+	size_t ksize;
+	Decompress(Decompressor, keyxpress, len, NULL, 0, &ksize);
+	byte *key_buffer = zsx_new(byte, ksize);
+	Decompress(Decompressor, keyxpress, len, key_buffer, ksize, &ksize);
 	CloseDecompressor(Decompressor);
 
-	zsx_reader_t *key = zsx_reader(buffer);
+	zsx_reader_t *key = zsx_reader(key_buffer);
+	zsx_reader_t *bytes = zsx_reader(buffer);
 	int z, s, x, length = zsx_read_value(key, 32);
-	byte * result = zsx_compress_buffer;
-	int **dico = zsx_new(int*, 256*256);
-	for (s = 0; s < 256*256; s++)
-		dico[s] = zsx_new(int, 4096);
-	int *indexes = zsx_new(int, 256*256);
-	int *reverse = zsx_new(int, 256*256);
-	int *counter = zsx_new(int, 256*256);
-	zsx_clear(indexes);
-	zsx_clear(reverse);
-	zsx_clear(counter);
+	byte * result = zsx_bytes_buffer;
+	int *indexof = zsx_new(int, 256);
+	int *indexes = zsx_new(int, 256);
+	int *stacker = zsx_new(int, 256);
+	int *reverse = zsx_new(int, 256);
+	int *values = zsx_new(int, 256);
 
 	int decoded = 0;
-	int last = 0, left = 0, next = 0;
-	while (decoded < length)
+	int next, start = 0;
+	while(decoded < length)
 	{
-		if (zsx_read_bit(key))
+
+		zsx_clear(stacker);
+		
+		int stop = zsx_read_value(key, zsx_lf(length));
+		printf("%d ", stop);
+		next = 0;
+		while (decoded < stop)
 		{
-			int returns = reverse[zsx_read_value(key, zsx_lf(next))+1];
-			x = dico[returns][zsx_read_value(key, zsx_lf(counter[returns]))];
-		}
-		else
-		{
-			x = zsx_read_value(key, 16);
-			dico[last][counter[last]++] = x;
-			if (indexes[last] == 0)
+			next=zsx_read_value(key, 8);
+
+			//we rebuild the index initial order
+			for(s=0;s<next;s++)
+				indexes[s]=s;
+			zsx_merge_sort_read(key, indexes, next);
+			for(s=0;s<next;s++)
+				indexof[indexes[s]]=s;
+
+			int complete = zsx_read_bit(key);
+
+			if(zsx_read_bit(key))
 			{
-				indexes[last] = next == 64 ? ++left : ++next;
-				if (next == 64)
+				x = zsx_read_value(bytes, 8);
+				printf("%d ", x);
+				//we hold the existence of each value
+				stacker[x]=1;
+
+				//the indexes are reordered later
+				result[decoded++]=x;
+
+			}else
+			{
+				if(complete)
+					result[decoded++]=-1;
+				else 
 				{
-					indexes[reverse[left]] = 0;
-					counter[reverse[left]] = 0;
+					x=zsx_read_value(bytes, 8);
+					stacker[x]=1;
+					result[decoded++]=x;
 				}
-				if (left == 64)left = 0;
-				reverse[indexes[last]] = last;
 			}
-
 		}
-		result[decoded++] = x>>8;
-		result[decoded++] = x&255;
-		last = x&255;
-	}
+		printf("%d ", decoded);
 
-	for (s = 0; s < 256*256; s++)
-		zsx_del(dico[s]);
-	zsx_del(dico);
-	zsx_del(indexes);
+		//we have all the different values used by indexes
+		for(x=0,s=0;s<256;s++)
+			if(stacker[s])
+			{
+				values[x++]=s;
+				printf("%c ", s);
+				reverse[s]=x-1;
+			}
+		
+		//we find the index of appearance from the decoded value and the initial value from the ordered indexof
+		for(next = 0, s = start; s < decoded; s++)
+		{
+			if(result[s]>-1)
+			{
+		   		result[s] = values[indexof[reverse[result[s]]]];
+			}else
+			{
+				result[s] = values[indexof[next++]];
+			}
+		}
+
+		//the next iteration will decode further
+		start = decoded;
+    }
+
+    zsx_del(indexes);
+    zsx_del(indexof);
+	zsx_del(stacker);
 	zsx_del(reverse);
-	zsx_del(counter);
+    zsx_del(values);
 
-	memcpy(zsx_result_buffer, zsx_compress_buffer, length);
+    zsx_del(key_buffer);
+	zsx_del(buffer);
+
+	memcpy(zsx_result_buffer, zsx_bytes_buffer, length);
 	zsx_len(zsx_result_buffer) = length;
 	zsx_result_buffer[length] = 0;
 	return zsx_result_buffer;
@@ -342,24 +430,26 @@ int test(char *filename) {
 			ol.Offset += zsx_bytes_read;
 			zsx_len(zsx_result_buffer) = zsx_bytes_read;
 			zsx_encode(zsx_result_buffer);
+			zsx_encode(zsx_result_buffer);
 			size_t len_zsx = zsx_len(zsx_result_buffer);
 			int prev_len = len_zsx + 1;
-			for (int z = 0; prev_len > len_zsx; z++)
+			for (int z = 0; prev_len>len_zsx; z++)
 			{
 				prev_len = len_zsx;
 				zsx_encode(zsx_result_buffer);
 				len_zsx = zsx_len(zsx_result_buffer);
 				//printf("%d ", len_zsx);
-			}
+			}		
 			//c-like file writing
 			fwrite(&len_zsx, sizeof(size_t), 1, f);
 			fwrite(zsx_result_buffer, len_zsx, 1, f);
 			printf("\r%.2f%%", (double)encoded / (double)file_size * 100.0);
 		}
 	zsx_exit
-		fclose(f);
+	
+	fclose(f);
+	
 	CloseHandle(hFile);
-
 
 	printf("\nCompressed to %s.\n", outfilename);
 
@@ -454,3 +544,4 @@ int main(int argc, char **argv) {
 	return 0;
 
 }
+
