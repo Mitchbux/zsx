@@ -1,0 +1,16 @@
+{
+  "name": "zsx-compressor",
+  "version": "1.0.0",
+  "description": "High-performance file compression tool built with Haxe",
+  "main": "test/zsx_test.js",
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node test/zsx_test.js benchmark",
+    "test:regression": "node test/zsx_regression.js && node test/zsx_range_regression.js",
+    "compress": "node test/zsx_test.js compress",
+    "start": "python -m http.server 5000 --directory public"
+  },
+  "type": "commonjs",
+  "keywords": ["compression", "haxe"],
+  "license": "MIT"
+}
