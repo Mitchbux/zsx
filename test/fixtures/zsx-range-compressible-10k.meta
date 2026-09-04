@@ -1,0 +1,14 @@
+Fixture: zsx-range-compressible-10k
+
+Input generator (C):
+  byte input[10000];
+  for (int i = 0; i < 10000; ++i) input[i] = (i % 31 == 0) ? 66 : 65;
+
+The encoded bytes in zsx-range-compressible-10k.zsx.hex were emitted by a
+portable harness compiled from attached_assets/test_1788294526759.c, calling
+its zsx_encode() directly.  The hex file is the 545-byte chunk encoded as
+lowercase hexadecimal (with one final newline).
+
+Input length: 10000
+Input SHA-256: 906cc4ce767ec38f4de7351b9db3c36eaa15c295a4abed1cc6c6f8fd1cf6b5f1
+Decoded chunk SHA-256: d24044575d356351f7d080108af65c105231c2ae467b1d2eca7b09afcdaa48d8
