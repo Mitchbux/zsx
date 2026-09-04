@@ -1,0 +1,3 @@
+-m ZSXEncode
+-js zsx_node.js
+-D nodejs
