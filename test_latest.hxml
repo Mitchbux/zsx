@@ -1,0 +1,4 @@
+-main TestZsxLatest
+-js test_zsx_latest.js
+-D nodejs
+-lib hxnodejs

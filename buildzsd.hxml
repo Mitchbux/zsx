@@ -1,0 +1,9 @@
+# Zsd C# source generation. Compilation is intentionally performed by
+# tools/zsd/build-zsd.sh so it can validate the resulting standalone source.
+-cp .
+-m Zsd
+-cs tools/zsd/generated
+-D net-ver=40
+-D no-compilation
+-D source-map
+-dce full

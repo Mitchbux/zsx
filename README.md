@@ -6,6 +6,48 @@ ZSX is a lossless file compressor with compatible implementations in Haxe/JavaSc
 - The C build provides a standalone command-line program for creating and extracting stored `.zsx` archives.
 - Both implementations read and write the portable `ZSX1` archive format.
 
+## Zsd: compressed upload and download (.NET Framework 4.0)
+
+`Zsd.hx` is the command-line application written in Haxe. Its generated
+[`outputs/Zsd.cs`](outputs/Zsd.cs) is one self-contained C# source file:
+compile it with the .NET Framework 4.0 C# compiler, without Haxe or third-party
+runtime DLLs on the destination machine.
+
+```bat
+cd outputs
+C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe /target:exe /out:Zsd.exe Zsd.cs
+Zsd.exe pack --output backup.zsd "C:\MyFolder"
+Zsd.exe unpack backup.zsd --output restored
+Zsd.exe upload --allow-public-upload "C:\MyFolder" "C:\Logs\*.txt"
+Zsd.exe get ENTRY_ID --output restored
+```
+
+Uploads compress the collected files before storing small encoded URL entries;
+downloads validate and decompress the archive before extraction. Folder structure
+and empty directories are preserved. Quoted wildcards are expanded by Zsd.
+See [Zsd usage, limits, and protocol](zsd/README.md) for details.
+
+**Privacy and durability:** is.gd entries are public, are not encrypted, cannot
+be deleted by their creator, and are not guaranteed storage. Public uploads
+therefore require `--allow-public-upload`. Do not use this for confidential files
+or as your only backup. The test suite uses a local mock service and makes no
+public uploads.
+
+To regenerate the C# file, install Haxe, `hxcs` (`haxelib install hxcs`), and Mono,
+then run `./tools/zsd/build-zsd.sh`. The build validates both C# 4 syntax and the
+.NET 4.0 reference assemblies. Source and runtime notices are embedded in the
+generated file.
+
+### Updated native ZSX compatibility
+
+The latest supplied native C source is preserved verbatim in
+[`reference/zsx-latest.c`](reference/zsx-latest.c). Its Haxe port is
+[`ZsxLatest.hx`](ZsxLatest.hx), used by Zsd. The newer native format has a
+different chunk header, so it is kept separate from existing `ZSX1` and ZSV
+formats. New portable byte-stream encodes use `ZSL1`; old readers and media
+codecs have not been replaced. See [format details and cross-language
+tests](ZSX_LATEST_FORMAT.md).
+
 ## Archive compatibility
 
 New archives use fixed-width little-endian fields, so they can be exchanged between 32-bit and 64-bit systems:
