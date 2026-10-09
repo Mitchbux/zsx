@@ -4,8 +4,9 @@ class BitWriter
 {
   var power:Int;
   var bits:Int;
-  var start:Int;
+  public var start:Int;
   var data:Bytes;
+  public var inter:Int;
 
   public function new(fromData:Bytes) 
   {
@@ -18,6 +19,16 @@ class BitWriter
   public function writeBit(v:Int)
   {
     bits+=(v&1)<<(8-(++power));
+  if(power>=8)
+  {
+     data.set(start++,bits);
+     power=0;
+     bits=0;
+  }
+  }
+  public function writeBool(v:Bool)
+  {
+    bits+=(v?1:0)<<(8-(++power));
   if(power>=8)
   {
      data.set(start++,bits);

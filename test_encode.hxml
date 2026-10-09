@@ -1,0 +1,3 @@
+-m TestEncode
+-js test_encode.js
+-D nodejs

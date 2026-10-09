@@ -18,6 +18,7 @@ import threading
 import unittest
 
 from mock_e2e import MockIsGd
+from format_fixtures import ENTRIES, container, legacy_fixture, record_stream, stored_stream
 
 
 EXE = os.environ.get("ZSD_EXE", "/tmp/Zsd-verified.exe")
@@ -243,6 +244,67 @@ class CliRegression(unittest.TestCase):
         self.require_failure(["unpack", "--output", output, damaged])
         self.assertFalse(os.path.exists(output), "damaged archive created extraction output")
 
+    def test_zsx3_headers_legacy_fixture_and_fail_before_extract(self):
+        # Explicit, independent pre-ZSX3 wire fixture (not the current encoder).
+        legacy = self.write("legacy.zsd", legacy_fixture())
+        restored = os.path.join(self.root, "legacy-restored")
+        self.invoke(["unpack", "--output", restored, legacy])
+        for path, directory, data in ENTRIES:
+            target = os.path.join(restored, path)
+            if directory:
+                self.assertTrue(os.path.isdir(target))
+            else:
+                with open(target, "rb") as handle:
+                    self.assertEqual(data, handle.read())
+
+        packed = os.path.join(self.root, "new.zsd")
+        message = self.invoke(["pack", "--output", packed, os.path.join(restored, "fixture")])
+        self.assertIn("ZSX3 v1", message)
+        with open(packed, "rb") as handle:
+            good = handle.read()
+        archive = record_stream()
+        self.assertEqual(b"ZSX3\x00\x01", good[:6])
+        self.assertEqual(len(archive), int.from_bytes(good[6:14], "big"))
+        self.assertEqual(hashlib.sha256(archive).digest(), good[14:46])
+        self.assertEqual(len(good) - 54, int.from_bytes(good[46:54], "big"))
+        self.assertEqual(b"ZSL1", good[54:58])
+        self.assertEqual(len(archive), int.from_bytes(good[58:62], "little"))
+        self.assertEqual(1, int.from_bytes(good[62:66], "little"))
+        self.assertEqual(bytes(4), good[66:70])
+        new_output = os.path.join(self.root, "new-restored")
+        self.invoke(["unpack", "--output", new_output, packed])
+        self.assertEqual(tree_hashes(restored), tree_hashes(new_output))
+        self.assertIn("ZSX3 v1", self.invoke(["--help"]))
+        bad = [good[:n] for n in (0, 3, 5, 13, 45, 53, 54, len(good) - 1)]
+        bad += [good + b"\0"]
+        for offset in (0, 5, 6, 13, 14, 46, 53, 54, 58, len(good) - 1):
+            altered = bytearray(good)
+            altered[offset] ^= 1
+            bad.append(bytes(altered))
+        # Bounds are rejected before allocation, including a length above 256 MiB.
+        bad.append(good[:6] + (0x10000001).to_bytes(8, "big") + good[14:])
+        bad.append(good[:46] + (0x40000001).to_bytes(8, "big") + good[54:])
+        # Valid container digest, invalid *last* file digest: no early files extracted.
+        broken_records = archive[:-1] + bytes([archive[-1] ^ 1])
+        bad.append(container(broken_records, b"ZSX3"))
+        # Correct outer checksum cannot opt v1 into a different inner format/codec.
+        bad.append(container(b"ZSDP\0\2" + archive[6:], b"ZSX3"))
+        bad.append(container(b"OTHER!" + archive[6:], b"ZSX3"))
+        bad.append(container(archive, b"ZSX3", stored_stream(archive)[16:]))
+        for index, data in enumerate(bad):
+            damaged = self.write("bad-%d.zsd" % index, data)
+            output = os.path.join(self.root, "absent-%d" % index)
+            self.require_failure(["unpack", "--output", output, damaged])
+            self.assertFalse(os.path.exists(output), "invalid archive created extraction output")
+        # Also leave an existing destination untouched even with --force.
+        protected = os.path.join(self.root, "protected")
+        sentinel = self.write("protected/fixture/a.bin", b"keep existing content")
+        damaged = self.write("bad-records.zsd", container(broken_records, b"ZSX3"))
+        self.require_failure(["unpack", "--force", "--output", protected, damaged])
+        with open(sentinel, "rb") as handle:
+            self.assertEqual(b"keep existing content", handle.read())
+        self.assertEqual({"fixture/a.bin"}, set(tree_hashes(protected)[1]))
+
     @unittest.skipIf(os.name == "nt", "POSIX filenames are required to create trailing spaces")
     def test_windows_device_and_trailing_component_names_are_rejected(self):
         for name in ("CON.txt", "trailing.", "trailing "):
@@ -297,7 +359,7 @@ class CliRegression(unittest.TestCase):
             expected = tree_hashes(source)
 
             uploaded = self.invoke([
-                "upload", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0", source
+                "upload", "--provider", "legacy", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0", source
             ])
             match = re.search(r"ZSD entry: ([A-Za-z0-9_]{5,30})", uploaded)
             self.assertIsNotNone(match, uploaded)
@@ -313,7 +375,7 @@ class CliRegression(unittest.TestCase):
 
             restored = os.path.join(self.root, "network-restored")
             self.invoke([
-                "get", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
+                "get", "--provider", "legacy", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
                 "--output", restored, root_id
             ])
             self.assertEqual(expected, tree_hashes(os.path.join(restored, "network-root")))
@@ -326,7 +388,7 @@ class CliRegression(unittest.TestCase):
             MockIsGd.values[leaf_id] = make_carrier(bytes(corrupt))
             absent = os.path.join(self.root, "corrupt-leaf-output")
             self.require_failure([
-                "get", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
+                "get", "--provider", "legacy", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
                 "--output", absent, root_id
             ])
             self.assertFalse(os.path.exists(absent), "corrupted leaf created output")
@@ -338,7 +400,7 @@ class CliRegression(unittest.TestCase):
             sentinel = self.write("protected-output/unchanged.txt", b"do not change")
             before = digest(sentinel)
             self.require_failure([
-                "get", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
+                "get", "--provider", "legacy", "--endpoint", endpoint, "--retries", "0", "--pace-ms", "0",
                 "--output", protected, root_id
             ])
             self.assertEqual(before, digest(sentinel))

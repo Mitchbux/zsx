@@ -1,0 +1,4 @@
+-m TestNode
+-js test_zsx.js
+-D nodejs
+-lib hxnodejs

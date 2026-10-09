@@ -11,6 +11,8 @@ typedef ZsdTransferOptions = {
   var timeoutMs:Int;
   var retries:Int;
   var paceMs:Int;
+  @:optional var provider:String;
+  @:optional var domain:String;
 }
 
 private typedef ZsdTreeItem = {
@@ -38,12 +40,15 @@ private typedef ZsdEndpointParts = {
 }
 
 /**
- * is.gd simple-API transport. Data is only embedded in a harmless encoded
- * dummy URL; response bodies are parsed as text and are never navigated to.
+ * URL-provider transport. Data is only embedded in an encoded carrier URL;
+ * response bodies are parsed as text and are never navigated to.
  */
 class ZsdProtocol {
   public static inline var DEFAULT_ENDPOINT = "https://is.gd/";
+  public static inline var DEFAULT_SHORT_IO_DOMAIN = "pex.s.gy";
   public static inline var CHUNK_BYTES = 1900;
+  public static inline var SHORT_IO_CARRIER_PREFIX = "https://pex.wf/#";
+  public static inline var LEGACY_CARRIER_PREFIX = "http://ok.com/?";
   /** Protocol transfer limit; this is intentionally lower than ZSD's file-format limit. */
   public static inline var MAX_TRANSFER_BYTES = 134217728; // 128 MiB
   static inline var GROUP_ITEMS = 20; // Max node is below the ~2 KiB chunk policy.
@@ -61,12 +66,16 @@ class ZsdProtocol {
   var nodeCount:Int;
   var workingBytes:Int;
   var activeNodes:StringMap<Bool>;
+  var shortIo:Null<ZsdShortIo>;
 
   public function new(options:ZsdTransferOptions) {
     if (options.retries < 0 || options.retries > 8) ZsdBinary.fail("retries must be 0..8");
     if (options.paceMs < 0 || options.paceMs > 600000) ZsdBinary.fail("pace-ms must be 0..600000");
     this.options = options;
     this.options.endpoint = endpoint(options.endpoint);
+    if (options.provider != null && options.provider != "legacy" && options.provider != "shortio")
+      ZsdBinary.fail("provider must be legacy or shortio");
+    shortIo = options.provider == "shortio" ? new ZsdShortIo(options) : null;
     lastRequest = -1;
     requestCount = 0;
     nodeCount = 0;
@@ -85,7 +94,7 @@ class ZsdProtocol {
   /**
    * Deliberately checks the URI authority's host rather than comparing the
    * endpoint string: case, port 443, HTTP, and a suffix path must not turn the
-   * public provider into an apparent custom endpoint for an opt-in check.
+   * public provider into an apparent custom endpoint for rate-limit handling.
    */
   public static function isPublicEndpoint(value:String):Bool {
     if (value == null) return false;
@@ -110,20 +119,38 @@ class ZsdProtocol {
     if (data.length > MAX_TRANSFER_BYTES) ZsdBinary.fail("upload exceeds 128 MiB transfer bound");
     beginTransfer();
     var chunks = new Array<ZsdTreeItem>();
+    var urls = new Array<String>();
+    var chunkLimit = shortIo == null ? CHUNK_BYTES : ZsdShortIo.CHUNK_BYTES;
     var at = 0;
     // A zero-length container cannot occur, but making it represented is useful
     // for protocol verification and keeps tree semantics unambiguous.
     do {
       var n = data.length - at;
-      if (n > CHUNK_BYTES) n = CHUNK_BYTES;
+      if (n > chunkLimit) n = chunkLimit;
       var part = data.sub(at, n);
-      chunks.push({id: put(part), length: n, digest: ZsdBinary.digest(part)});
+      if (shortIo != null) urls.push(targetUrl(part, "shortio"));
+      chunks.push({id: shortIo == null ? put(part) : "", length: n, digest: ZsdBinary.digest(part)});
       at += n;
     } while (at < data.length);
-    return buildNodes(chunks, false).id;
+    if (shortIo != null) {
+      var ids = shortIo.putMany(urls);
+      for (i in 0...ids.length) chunks[i].id = ids[i];
+    }
+    var root = buildNodes(chunks, false).id;
+    return shortIo == null ? root : "zsd-sio-v1:" + shortIo.domain + ":" + root;
   }
 
   public function download(id:String):Bytes {
+    if (StringTools.startsWith(id, "zsd-sio-v1:")) {
+      var fields = id.split(":");
+      if (fields.length != 3) ZsdBinary.fail("invalid Short.io ZSD reference");
+      if (options.domain != null && options.domain != "" && options.domain.toLowerCase() != fields[1].toLowerCase())
+        ZsdBinary.fail("Short.io reference domain does not match configured domain");
+      options.provider = "shortio";
+      options.domain = fields[1];
+      if (shortIo == null || shortIo.domain != fields[1].toLowerCase()) shortIo = new ZsdShortIo(options);
+      id = fields[2];
+    }
     validateId(id);
     beginTransfer();
     return readNode(id, 0).data;
@@ -131,18 +158,25 @@ class ZsdProtocol {
 
   function buildNodes(items:Array<ZsdTreeItem>, children:Bool):ZsdTreeItem {
     var level = new Array<ZsdTreeItem>();
+    var urls = new Array<String>();
     var at = 0;
     while (at < items.length) {
       var take = items.length - at;
-      if (take > GROUP_ITEMS) take = GROUP_ITEMS;
+      var groupLimit = shortIo == null ? GROUP_ITEMS : 12;
+      if (take > groupLimit) take = groupLimit;
       var group = items.slice(at, at + take);
       var length = totalLength(group);
       var digest = combinedDigest(group); // metadata binds the exact payload sequence.
       var node:ZsdTreeNode = {children: children, length: length, digest: digest, items: group};
       var encoded = encodeNode(node);
       if (encoded.length > CHUNK_BYTES) ZsdBinary.fail("internal tree node exceeded chunk bound");
-      level.push({id: put(encoded), length: length, digest: digest});
+      if (shortIo != null) urls.push(targetUrl(encoded, "shortio"));
+      level.push({id: shortIo == null ? put(encoded) : "", length: length, digest: digest});
       at += take;
+    }
+    if (shortIo != null) {
+      var ids = shortIo.putMany(urls);
+      for (i in 0...ids.length) level[i].id = ids[i];
     }
     // Even a single leaf is referenced from this ZSDT metadata node. Never
     // expose a raw data chunk as the download root.
@@ -235,30 +269,52 @@ class ZsdProtocol {
 
   function put(data:Bytes):String {
     if (data.length > CHUNK_BYTES) ZsdBinary.fail("attempted upload chunk exceeds bound");
-    var payload = Base64.encode(data).split("+").join(".").split("/").join("_");
-    var url = options.endpoint + "create.php?format=simple&url=" + StringTools.urlEncode("http://ok.com/?" + payload);
+    var url = options.endpoint + "create.php?format=simple&url=" + StringTools.urlEncode(targetUrl(data));
     return shortId(request(url));
+  }
+
+  static function targetUrl(data:Bytes, provider:String = "legacy"):String {
+    var encoded = Base64.encode(data);
+    // The carrier is unrelated to the configured Short.io shortening domain.
+    return provider == "shortio" ? SHORT_IO_CARRIER_PREFIX + encoded :
+      LEGACY_CARRIER_PREFIX + encoded.split("+").join(".").split("/").join("_");
   }
 
   function get(id:String):Bytes {
     validateId(id);
-    var response = StringTools.trim(request(options.endpoint + "forward.php?format=simple&shorturl=" + id));
-    var prefix = "http://ok.com/?";
+    // Legacy simple-API responses can have surrounding transport whitespace.
+    // Short.io originalURL is checked exactly as returned, without normalizing it.
+    var response = shortIo == null ?
+      StringTools.trim(request(options.endpoint + "forward.php?format=simple&shorturl=" + id)) : shortIo.get(id);
+    return decodeTargetUrl(response, shortIo == null ? CHUNK_BYTES : ZsdShortIo.CHUNK_BYTES);
+  }
+
+  public static function decodeTargetUrl(response:String, chunkLimit:Int = CHUNK_BYTES):Bytes {
+    var standard = StringTools.startsWith(response, SHORT_IO_CARRIER_PREFIX);
+    var prefix = standard ? SHORT_IO_CARRIER_PREFIX : LEGACY_CARRIER_PREFIX;
     if (!StringTools.startsWith(response, prefix))
       ZsdBinary.fail("provider returned a non-dummy response; it was not followed");
     var encoded = response.substr(prefix.length);
-    if (!~/^[A-Za-z0-9._=]*$/.match(encoded)) ZsdBinary.fail("provider returned invalid encoded data");
-    // Do this before Base64.decode allocates: a legal 1,900-byte chunk needs
-    // no more than 2,536 Base64 characters including padding.
-    if (encoded.length > 2536) ZsdBinary.fail("provider returned chunk exceeding bound");
+    // Bound allocation before decoding (1450 bytes => 1936 encoded characters;
+    // the legacy 1900-byte policy permits at most 2536).
+    if (encoded.length > Std.int(Math.ceil(chunkLimit / 3) * 4))
+      ZsdBinary.fail("provider returned chunk exceeding bound");
+    if (standard) {
+      if (!~/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/.match(encoded))
+        ZsdBinary.fail("provider returned invalid standard base64");
+    } else if (!~/^[A-Za-z0-9._=]*$/.match(encoded)) {
+      ZsdBinary.fail("provider returned invalid encoded data");
+    }
     var decoded:Bytes;
     try {
-      decoded = Base64.decode(encoded.split(".").join("+").split("_").join("/"));
+      decoded = Base64.decode(standard ? encoded : encoded.split(".").join("+").split("_").join("/"));
     } catch (e:Dynamic) {
       ZsdBinary.fail("provider returned invalid base64: " + Std.string(e));
       return Bytes.alloc(0); // ZsdBinary.fail always throws; required by Haxe's return analysis.
     }
-    if (decoded.length > CHUNK_BYTES) ZsdBinary.fail("provider returned chunk exceeding bound");
+    if (standard && Base64.encode(decoded) != encoded)
+      ZsdBinary.fail("provider returned non-canonical standard base64");
+    if (decoded.length > chunkLimit) ZsdBinary.fail("provider returned chunk exceeding bound");
     return decoded;
   }
 
@@ -321,10 +377,15 @@ class ZsdProtocol {
   }
 
   function beginTransfer():Void {
+    if (shortIo != null) shortIo.begin();
     requestCount = 0;
     nodeCount = 0;
     workingBytes = 0;
     activeNodes = new StringMap<Bool>();
+  }
+
+  public function cancel():Void {
+    if (shortIo != null) shortIo.cancel();
   }
 
   function reserveWorking(length:Int):Void {
@@ -392,7 +453,9 @@ class ZsdProtocol {
   }
 
   static function validateId(id:String):Void {
-    if (!~/^[A-Za-z0-9_]{5,30}$/.match(id)) ZsdBinary.fail("invalid short id");
+    // '$' alone can match before a final newline on the .NET regex target.
+    if (id.length < 5 || id.length > 30 || ~/[^A-Za-z0-9_]/.match(id))
+      ZsdBinary.fail("invalid short id");
   }
 
   static function shortId(body:String):String {

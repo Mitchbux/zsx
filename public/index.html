@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZSX Compressor</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/fontawesome.min.css"
+      integrity="sha512-v8QQ0YQ3H4K6Ic3PJkym91KoeNT5S3PnDKvqnwqFD1oiqIl653crGZplPdU5KKtHjO0QKcQ2aUlQZYjHczkmGw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/solid.min.css"
+      integrity="sha512-DzC7h7+bDlpXPDQsX/0fShhf1dLxXlHuhPBkBo/5wJWRoTU6YL7moeiNoej6q3wh5ti78C57Tu1JwTNlcgHSjg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css"
+    />
+    <style>
+      html,
+      body {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+      .hero-section {
+        padding: 2rem;
+      }
+      .main-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 600px;
+        margin: 0 auto;
+        overflow: hidden;
+      }
+      .card-header-custom {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 2rem;
+        text-align: center;
+      }
+      .card-header-custom h1 {
+        color: white;
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+      }
+      .card-header-custom p {
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .card-body {
+        padding: 2rem;
+      }
+      .upload-area {
+        border: 3px dashed #dbdbdb;
+        border-radius: 12px;
+        padding: 3rem 2rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        background: #fafafa;
+      }
+      .upload-area:hover {
+        border-color: #4facfe;
+        background: #f0f8ff;
+      }
+      .upload-area.dragover {
+        border-color: #00f2fe;
+        background: #e8f7ff;
+      }
+      .upload-icon {
+        font-size: 3rem;
+        color: #4facfe;
+        margin-bottom: 1rem;
+      }
+      .file-input-hidden {
+        display: none;
+      }
+      .file-name-display {
+        margin-top: 1rem;
+        font-weight: 500;
+        color: #363636;
+      }
+      .action-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        justify-content: center;
+      }
+      .action-buttons .button {
+        padding: 1.5rem 2rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 8px;
+      }
+      .progress-section {
+        margin-top: 1.5rem;
+      }
+      .progress-section .progress {
+        height: 1.5rem;
+        border-radius: 8px;
+      }
+      .progress-section .progress::-webkit-progress-value {
+        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+        border-radius: 8px;
+      }
+      .status-text {
+        text-align: center;
+        margin-top: 0.75rem;
+        font-weight: 500;
+        color: #7a7a7a;
+      }
+      .status-text.success {
+        color: #48c774;
+      }
+      .status-text.processing {
+        color: #3273dc;
+      }
+      footer {
+        text-align: center;
+        padding: 1.5rem;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+      }
+      footer a {
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="hero-section">
+      <div class="container">
+        <div class="main-card">
+          <div class="card-header-custom">
+            <h1><i class="fas fa-compress-arrows-alt"></i> ZSX Compressor</h1>
+            <p>High-performance file compression tool</p>
+          </div>
+
+          <div class="card-body">
+            <div class="upload-area" id="uploadArea">
+              <div class="upload-icon">
+                <i class="fas fa-cloud-upload-alt"></i>
+              </div>
+              <p class="has-text-grey">
+                Drag and drop a file here, or click to browse
+              </p>
+              <input
+                class="file-input-hidden"
+                type="file"
+                id="FileToCompress"
+              />
+              <div class="file-name-display" id="fileName"></div>
+            </div>
+
+            <div class="action-buttons" id="go"></div>
+
+            <div class="progress-section">
+              <progress
+                id="progress"
+                class="progress is-link"
+                value="0"
+                max="100"
+              ></progress>
+              <p class="status-text" id="statusText">Select a file to begin</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>Built with Haxe | ZSX Compression Algorithm</p>
+    </footer>
+
+    <script>
+      var uploadArea = document.getElementById("uploadArea");
+      var fileInput = document.getElementById("FileToCompress");
+      var fileName = document.getElementById("fileName");
+      var statusText = document.getElementById("statusText");
+
+      uploadArea.addEventListener("click", function () {
+        fileInput.click();
+      });
+
+      uploadArea.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        uploadArea.classList.add("dragover");
+      });
+
+      uploadArea.addEventListener("dragleave", function () {
+        uploadArea.classList.remove("dragover");
+      });
+
+      uploadArea.addEventListener("drop", function (e) {
+        e.preventDefault();
+        uploadArea.classList.remove("dragover");
+        if (e.dataTransfer.files.length > 0) {
+          fileInput.files = e.dataTransfer.files;
+          updateFileName();
+        }
+      });
+
+      fileInput.addEventListener("change", updateFileName);
+
+      function updateFileName() {
+        if (fileInput.files.length > 0) {
+          var file = fileInput.files[0];
+          var size = (file.size / 1024).toFixed(2);
+          if (size > 1024) {
+            size = (size / 1024).toFixed(2) + " MB";
+          } else {
+            size = size + " KB";
+          }
+          fileName.textContent = file.name + " (" + size + ")";
+          statusText.textContent = "File ready - click Compress or Decompress";
+          statusText.className = "status-text";
+        }
+      }
+    </script>
+    <script src="zsxe.js" id="zsxe"></script>
+    <script src="zsx.js"></script>
+  </body>
+</html>

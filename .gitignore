@@ -1,0 +1,76 @@
+# Reproducible Windows cross-build cache (not player deliverables).
+/temporarybuildtree/
+/.migration-backup/temporarybuildtree/
+/.zig-cache/
+
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
+
+# Local credentials and generated build/runtime state
+key.pem
+finalize_tool/obj/
+.migration-backup/finalize_tool/obj/
+outputs/zsv-player-tests/last-run.json
+.migration-backup/outputs/zsv-player-tests/last-run.json
+
+# Local Haxe C# backend installation and disposable generated sources.
+/haxelib/hxcs/
+/tools/zsd/generated/
+
+# Explicitly private builds contain an embedded live credential. Never commit.
+/outputs/private-zsd/
+
+# Reproducible full-corpus experiment outputs (sources/reports live in experimental).
+/outputs/zsx-tcc/
+/outputs/zsx-source/
+/outputs/zsx-computed/
+/outputs/zxh-frequency/
+/outputs/enwik9-analysis/
+/generated-artifacts/

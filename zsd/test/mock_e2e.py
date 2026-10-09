@@ -71,7 +71,7 @@ def main():
         with open(os.path.join(source, "note.txt"), "wb") as handle:
             handle.write(b"single leaf local protocol test\n")
         endpoint = "http://127.0.0.1:%d/" % server.server_port
-        uploaded = run(executable + ["upload", "--endpoint", endpoint, "--pace-ms", "0", source], root)
+        uploaded = run(executable + ["upload", "--provider", "legacy", "--endpoint", endpoint, "--pace-ms", "0", source], root)
         match = re.search(r"ZSD entry: ([A-Za-z0-9_]{5,30})", uploaded)
         assert match, uploaded
         # Tiny input produces one data leaf plus one root tree node. This
@@ -81,7 +81,7 @@ def main():
         root_node = MockIsGd.uploads[-1]
         assert root_node[:4] == b"ZSDT" and root_node[6] == 0, root_node[:7]
         destination = os.path.join(root, "out")
-        run(executable + ["get", "--endpoint", endpoint, "--pace-ms", "0", "--output", destination, match.group(1)], root)
+        run(executable + ["get", "--provider", "legacy", "--endpoint", endpoint, "--pace-ms", "0", "--output", destination, match.group(1)], root)
         with open(os.path.join(destination, "input", "note.txt"), "rb") as handle:
             assert handle.read() == b"single leaf local protocol test\n"
         assert os.path.isdir(os.path.join(destination, "input", "empty"))

@@ -41,15 +41,32 @@
 typedef uint8_t byte;
 typedef uint16_t ushort;
 
+#ifdef ZSX_LIBRARY
+/* FFmpeg supplies a per-call allocation scope and recoverable OOM boundary. */
+void *zsx_library_calloc(size_t, size_t);
+void zsx_library_free(void *);
+void zsx_library_oom(void);
+#define calloc zsx_library_calloc
+#define free zsx_library_free
+#endif
+
 void *zsx_alloc(size_t item_size, size_t n_item) {
 	if (item_size && n_item > (SIZE_MAX - sizeof(size_t) * 2) / item_size) {
+#ifdef ZSX_LIBRARY
+zsx_library_oom();
+#else
 		fprintf(stderr, "zsx: allocation size overflow\n");
 		exit(1);
+#endif
 	}
 	size_t *x = (size_t *)calloc(1, sizeof(size_t) * 2 + n_item * item_size);
 	if (!x) {
+#ifdef ZSX_LIBRARY
+zsx_library_oom();
+#else
 		fprintf(stderr, "zsx: out of memory\n");
 		exit(1);
+#endif
 	}
 	x[0] = item_size;
 	x[1] = n_item;
@@ -687,6 +704,7 @@ byte * zsx_predict_read(byte *stream, byte*result, int len, int stream_len, int 
 
 byte *zsx_decode(byte *data);
 
+#ifndef ZSX_LIBRARY
 static int write_all(FILE *file, const void *data, size_t length) {
 	return length == 0 || fwrite(data, 1, length, file) == length;
 }
@@ -761,7 +779,13 @@ static int replace_output(const char *temporary, const char *output) {
 #endif
 }
 
-static int compress_file(const char *input_path, const char *output_path) {
+#include "zsx_high.h"
+
+/* A marked ZSH1 chunk is a normal baseline-coded chunk whose decoded bytes
+ * contain the reversible high-mode transform. Unmarked chunks remain ZSX1. */
+#define ZSX_HIGH_MARK UINT32_C(0x80000000)
+
+static int compress_file(const char *input_path, const char *output_path, int high) {
 	ZSX_STAT_STRUCT info;
 	if (zsx_stat(input_path, &info) != 0) {
 		fprintf(stderr, "zsx: cannot stat '%s': %s\n", input_path, strerror(errno));
@@ -800,6 +824,7 @@ static int compress_file(const char *input_path, const char *output_path) {
 	put_u32(header + 8, chunks);
 	put_u32(header + 12, 0);
 	int ok = write_all(output, header, sizeof(header));
+	uint32_t high_chunks = 0;
 
 	for (uint32_t i = 0; ok && i < chunks; i++) {
 		uint32_t wanted = original - i * (uint32_t)zsx_chunk;
@@ -809,11 +834,44 @@ static int compress_file(const char *input_path, const char *output_path) {
 			fprintf(stderr, "zsx: input was truncated while reading\n");
 			ok = 0;
 		} else {
+			unsigned char *transformed = NULL;
+			size_t transformed_length = 0;
+			struct zsx_high_stats stats = {0};
+			int candidate = high && zsx_high_encode(chunk, wanted,
+				&transformed, &transformed_length, &stats);
 			zsx_len(chunk) = wanted;
 			zsx_encode(chunk);
 			uint32_t encoded = (uint32_t)zsx_len(chunk);
+			uint32_t baseline_length = encoded;
+			uint32_t mode = 0;
+			size_t candidate_length = 0;
+			if (candidate && transformed_length <= zsx_chunk) {
+				byte *trial = zsx_new(byte, (size_t)zsx_chunk + header_sizes + 1);
+				memcpy(trial, transformed, transformed_length);
+				zsx_len(trial) = transformed_length;
+				/* Feed dictionary metadata AND hash/replacement tokens to the
+				 * unchanged baseline predictor, not a separate raw side stream. */
+				zsx_encode(trial);
+				candidate_length = zsx_len(trial);
+				if (candidate_length < encoded) {
+					encoded = (uint32_t)candidate_length;
+					memcpy(chunk, trial, encoded);
+					mode = ZSX_HIGH_MARK;
+					high_chunks++;
+				}
+				zsx_del(trial);
+			}
+			free(transformed);
+			if (high) {
+				fprintf(stderr,
+					"high chunk %u: baseline=%u hash=%zu selected=%s "
+					"dictionary=%zu hits=%zu replacements=%zu collisions=%zu\n",
+					i + 1, baseline_length, candidate_length,
+					mode ? "hash" : "baseline", stats.dictionary_entries,
+					stats.hash_hits, stats.definitions, stats.collisions);
+			}
 			byte length[4];
-			put_u32(length, encoded);
+			put_u32(length, encoded | mode);
 			ok = write_all(output, length, sizeof(length)) &&
 				write_all(output, chunk, encoded);
 			if (!ok) fprintf(stderr, "zsx: write failed for '%s'\n", output_path);
@@ -828,6 +886,13 @@ static int compress_file(const char *input_path, const char *output_path) {
 		ok = 0;
 	}
 	fclose(input);
+	/* If no candidate won, the file stays byte-identical to ordinary ZSX1.
+	 * Otherwise only the magic changes; chunk selection adds no size overhead. */
+	if (ok && high_chunks &&
+		(fseek(output, 0, SEEK_SET) != 0 || !write_all(output, "ZSH1", 4))) {
+		fprintf(stderr, "zsx: failed to finalize high-mode archive header\n");
+		ok = 0;
+	}
 	if (fclose(output) != 0) ok = 0;
 	if (ok && !replace_output(temporary, output_path)) {
 		fprintf(stderr, "zsx: cannot replace '%s': %s\n", output_path, strerror(errno));
@@ -865,8 +930,10 @@ static int decompress_file(const char *input_path, const char *output_path) {
 	uint32_t flags = get_u32(header + 12);
 	uint32_t expected_chunks = original == 0 ? 0 :
 		(uint32_t)(((uint64_t)original + zsx_chunk - 1) / zsx_chunk);
-	if (memcmp(header, "ZSX1", 4) != 0 || flags != 0 || chunks != expected_chunks) {
-		fprintf(stderr, "zsx: invalid ZSX1 header, flags, or chunk count\n");
+	int high_archive = memcmp(header, "ZSH1", 4) == 0;
+	if ((!high_archive && memcmp(header, "ZSX1", 4) != 0) ||
+		flags != 0 || chunks != expected_chunks) {
+		fprintf(stderr, "zsx: invalid ZSX1/ZSH1 header, flags, or chunk count\n");
 		fclose(input);
 		return 0;
 	}
@@ -879,6 +946,7 @@ static int decompress_file(const char *input_path, const char *output_path) {
 	}
 
 	int ok = 1;
+	uint32_t high_decoded = 0;
 	uint64_t produced = 0;
 	for (uint32_t i = 0; ok && i < chunks; i++) {
 		byte length_bytes[4];
@@ -888,6 +956,8 @@ static int decompress_file(const char *input_path, const char *output_path) {
 			break;
 		}
 		uint32_t length = get_u32(length_bytes);
+		int high_chunk = high_archive && (length & ZSX_HIGH_MARK) != 0;
+		if (high_chunk) length &= ~ZSX_HIGH_MARK;
 		if (length < header_sizes || length > zsx_chunk + header_sizes) {
 			fprintf(stderr, "zsx: invalid chunk length\n");
 			ok = 0;
@@ -901,7 +971,8 @@ static int decompress_file(const char *input_path, const char *output_path) {
 			uint32_t declared = get_u32(chunk);
 			uint32_t expected = original - (uint32_t)produced;
 			if (expected > zsx_chunk) expected = zsx_chunk;
-			if (declared != expected || produced + declared > original) {
+			if ((!high_chunk && declared != expected) ||
+				(high_chunk && (declared == 0 || declared > zsx_chunk))) {
 				fprintf(stderr, "zsx: chunk output length does not match archive\n");
 				ok = 0;
 			} else {
@@ -909,9 +980,27 @@ static int decompress_file(const char *input_path, const char *output_path) {
 				if (!zsx_decode(chunk)) {
 					fprintf(stderr, "zsx: chunk decode failed\n");
 					ok = 0;
-				} else if ((uint32_t)zsx_len(chunk) != declared ||
-					!write_all(output, chunk, declared)) {
+				} else if ((uint32_t)zsx_len(chunk) != declared) {
 					fprintf(stderr, "zsx: output write or length failure\n");
+					ok = 0;
+				} else if (high_chunk) {
+					unsigned char *restored = NULL;
+					size_t restored_length = 0;
+					if (declared < 5 || chunk[4] != 0 ||
+						!zsx_high_decode(chunk, declared, &restored,
+						&restored_length, expected) || restored_length != expected) {
+						fprintf(stderr, "zsx: invalid high-mode dictionary, token stream, or checksum\n");
+						ok = 0;
+					} else if (!write_all(output, restored, restored_length)) {
+						fprintf(stderr, "zsx: output write failed\n");
+						ok = 0;
+					} else {
+						produced += restored_length;
+						high_decoded++;
+					}
+					free(restored);
+				} else if (!write_all(output, chunk, declared)) {
+					fprintf(stderr, "zsx: output write failed\n");
 					ok = 0;
 				} else {
 					produced += declared;
@@ -919,6 +1008,10 @@ static int decompress_file(const char *input_path, const char *output_path) {
 			}
 		}
 		zsx_del(chunk);
+	}
+	if (ok && high_archive && !high_decoded) {
+		fprintf(stderr, "zsx: ZSH1 archive contains no hash-transformed chunks\n");
+		ok = 0;
 	}
 	if (ok && produced != original) {
 		fprintf(stderr, "zsx: decoded output length mismatch\n");
@@ -942,6 +1035,8 @@ static int decompress_file(const char *input_path, const char *output_path) {
 	if (ok) printf("Decompressed %u bytes to %s\n", original, output_path);
 	return ok;
 }
+
+#include "zsx_x.h"
 
 static char *default_compressed_name(const char *input) {
 	size_t length = strlen(input);
@@ -972,15 +1067,31 @@ static void usage(FILE *out, const char *program) {
 	fprintf(out,
 		"Usage:\n"
 		"  %s INPUT [OUTPUT]       Compress to a portable ZSX1 archive\n"
-		"  %s -d INPUT [OUTPUT]    Decompress a ZSX1 archive\n"
+		"  %s -h INPUT [OUTPUT]    Try character-frequency word hashes before ZSX\n"
+		"  %s -d INPUT [OUTPUT]    Decompress a ZSX1 or ZSH1 archive\n"
+"  %s -x --trust-generated-code INPUT.zxh OUTPUT\n"
+"                         Execute trusted ZXH1 C (UNSANDBOXED)\n"
 		"  %s -h | --help          Show this help\n"
 		"\nDefault output is INPUT.zsx when compressing; decompression strips\n"
-		".zsx or appends .out when that suffix is absent.\n",
-		program, program, program);
+		".zsx or appends .out when that suffix is absent. High mode selects\n"
+		"hashes per chunk only when the complete encoded candidate is smaller.\n",
+program, program, program, program, program);
 }
 
 int main(int argc, char **argv) {
+if (argc > 1 && !strcmp(argv[1], "-x")) {
+if (argc != 5 || strcmp(argv[2], "--trust-generated-code")) {
+fprintf(stderr, "zsx: -x requires --trust-generated-code INPUT.zxh OUTPUT; native C is NOT sandboxed\n");
+return 2;
+}
+if (!strcmp(argv[3], argv[4])) {
+fprintf(stderr, "zsx: input and output paths must differ\n");
+return 1;
+}
+return execute_zxh(argv[3], argv[4]) ? 0 : 1;
+}
 	int decode = 0;
+	int high = 0;
 	int at = 1;
 	if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
 		usage(stdout, argv[0]);
@@ -988,6 +1099,9 @@ int main(int argc, char **argv) {
 	}
 	if (at < argc && !strcmp(argv[at], "-d")) {
 		decode = 1;
+		at++;
+	} else if (at < argc && !strcmp(argv[at], "-h")) {
+		high = 1;
 		at++;
 	}
 	if (argc - at < 1 || argc - at > 2) {
@@ -1007,7 +1121,7 @@ int main(int argc, char **argv) {
 		free(allocated);
 		return 1;
 	}
-	int ok = decode ? decompress_file(input, output) : compress_file(input, output);
+	int ok = decode ? decompress_file(input, output) : compress_file(input, output, high);
 	free(allocated);
 	return ok ? 0 : 1;
 }
@@ -1018,6 +1132,7 @@ int main(int argc, char **argv) {
 // byte * data 			: the buffer to decompress, header first
 // .......................
 // returns the decompressed byte* buffer
+#endif /* standalone archive/filesystem/CLI only */
 byte *zsx_decode(byte *data) {
 
 	//read sizes : original length, stream length, literal count, crc

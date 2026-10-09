@@ -5,6 +5,7 @@ IFS=$'\n\t'
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_dir=$(cd -- "$script_dir/../.." && pwd)
+export HAXELIB_PATH="$project_dir/haxelib"
 hxml="$project_dir/buildzsd.hxml"
 generated_dir="$project_dir/tools/zsd/generated"
 output_dir="$project_dir/outputs"

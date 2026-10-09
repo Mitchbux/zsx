@@ -1,0 +1,3 @@
+-m TestClassify
+-js test_classify.js
+-D nodejs

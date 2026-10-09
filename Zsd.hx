@@ -38,19 +38,38 @@ class Zsd {
   static function upload(args:Array<String>):Void {
     var parsed = transferOptions(args, false);
     if (parsed.rest.length == 0) ZsdBinary.fail("upload needs at least one file, folder, or wildcard");
-    if (ZsdProtocol.isPublicEndpoint(parsed.options.endpoint) && !parsed.publicAllowed)
-      ZsdBinary.fail("refusing public is.gd upload without --allow-public-upload (entries are public and non-durable)");
+    // Invoking upload is consent; keep the warning without an interactive gate.
+    Sys.println("Warning: uploads use public, non-durable URL storage. Do not upload secrets.");
+    var protocol = new ZsdProtocol(parsed.options);
     var archive = ZsdArchive.fromSources(ZsdInputs.collect(parsed.rest));
     var container = ZsdContainer.pack(archive); // Compression happens before any network request.
-    Sys.println("Uploading " + container.length + " compressed bytes in <= " + ZsdProtocol.CHUNK_BYTES + "-byte chunks...");
-    var id = new ZsdProtocol(parsed.options).upload(container);
+    var chunkLimit = parsed.options.provider == "shortio" ? zsd.ZsdShortIo.CHUNK_BYTES : ZsdProtocol.CHUNK_BYTES;
+    Sys.println("Uploading ZSX3 v1: " + container.length + " compressed bytes in <= " + chunkLimit + "-byte chunks...");
+    var id = protocol.upload(container);
+    var envDomain = Sys.getEnv("SHORT_IO_DOMAIN");
+    var defaultPrefix = "zsd-sio-v1:" + ZsdProtocol.DEFAULT_SHORT_IO_DOMAIN + ":";
+    if (StringTools.startsWith(id, defaultPrefix) &&
+        (envDomain == null || envDomain == "" || envDomain.toLowerCase() == ZsdProtocol.DEFAULT_SHORT_IO_DOMAIN))
+      id = id.substr(defaultPrefix.length);
     Sys.println("ZSD entry: " + id);
-    Sys.println("Retrieve with: zsd get --endpoint " + parsed.options.endpoint + " " + id);
+    Sys.println("Retrieve with: zsd get" + (parsed.options.provider == "legacy" ? " --provider legacy" : "") +
+      (parsed.options.endpoint == ZsdProtocol.DEFAULT_ENDPOINT ?
+      "" : " --endpoint " + parsed.options.endpoint) + " " + id);
   }
 
   static function get(args:Array<String>):Void {
     var parsed = transferOptions(args, true);
     if (parsed.rest.length != 1) ZsdBinary.fail("get needs exactly one short id");
+    if (StringTools.startsWith(parsed.rest[0], "zsd-sio-v1:")) {
+      var fields = parsed.rest[0].split(":");
+      if (fields.length != 3) ZsdBinary.fail("invalid Short.io ZSD reference");
+      if (parsed.domainSpecified && parsed.options.domain.toLowerCase() != fields[1].toLowerCase())
+        ZsdBinary.fail("Short.io reference domain conflicts with explicit --domain");
+      // A typed reference is self-contained: neither env nor built-in defaults
+      // may override its domain. Resolve before constructing the API client.
+      parsed.options.provider = "shortio";
+      parsed.options.domain = fields[1];
+    }
     var packed = new ZsdProtocol(parsed.options).download(parsed.rest[0]);
     var entries = ZsdArchive.decode(ZsdContainer.unpack(packed)); // Fully verify before extraction.
     ZsdArchive.extract(entries, parsed.output, parsed.force);
@@ -135,7 +154,7 @@ class Zsd {
         ZsdBinary.fail("pack output replacement failed and rollback failed: " + rollbackError + "; original error: " + Std.string(e));
       ZsdBinary.fail("pack output replacement failed; existing output was restored: " + Std.string(e));
     }
-    Sys.println("Wrote " + output);
+    Sys.println("Wrote ZSX3 v1 archive: " + output);
   }
 
   static function unpack(args:Array<String>):Void {
@@ -160,19 +179,30 @@ class Zsd {
     Sys.println("Unpacked " + input + " to " + output);
   }
 
-  static function transferOptions(args:Array<String>, extraction:Bool):{options:ZsdTransferOptions, rest:Array<String>, output:String, force:Bool, publicAllowed:Bool} {
+  static function transferOptions(args:Array<String>, extraction:Bool):{options:ZsdTransferOptions, rest:Array<String>, output:String, force:Bool, domainSpecified:Bool} {
     var endpoint = ZsdProtocol.DEFAULT_ENDPOINT;
+    var provider = "shortio";
+    var domain = Sys.getEnv("SHORT_IO_DOMAIN");
+    if (domain == null || domain == "") domain = ZsdProtocol.DEFAULT_SHORT_IO_DOMAIN;
+    var domainSpecified = false;
     var timeoutMs = 30000;
     var retries = 2;
     var paceMs = 500;
+    var paceSpecified = false;
     var output = ".";
     var force = false;
-    var publicAllowed = false;
     var rest = new Array<String>();
     var i = 0;
     while (i < args.length) {
       var arg = args[i++];
       switch (arg) {
+        case "--provider":
+          if (i >= args.length) ZsdBinary.fail("--provider needs legacy or shortio");
+          provider = args[i++];
+        case "--domain":
+          if (i >= args.length) ZsdBinary.fail("--domain needs a hostname");
+          domain = args[i++];
+          domainSpecified = true;
         case "--endpoint":
           if (i >= args.length) ZsdBinary.fail("--endpoint needs a URL");
           endpoint = args[i++];
@@ -185,6 +215,7 @@ class Zsd {
         case "--pace-ms":
           if (i >= args.length) ZsdBinary.fail("--pace-ms needs an integer");
           paceMs = integer(args[i++], "--pace-ms");
+          paceSpecified = true;
         case "--output", "-o":
           if (!extraction) ZsdBinary.fail(arg + " is only valid for get/unpack");
           if (i >= args.length) ZsdBinary.fail(arg + " needs a directory");
@@ -194,15 +225,18 @@ class Zsd {
           force = true;
         case "--allow-public-upload":
           if (extraction) ZsdBinary.fail("--allow-public-upload is only valid for upload");
-          publicAllowed = true;
+          // Accepted for old scripts; upload itself now provides consent.
         default:
           if (StringTools.startsWith(arg, "--")) ZsdBinary.fail("unknown option: " + arg);
           rest.push(arg);
       }
     }
+    if (provider != "shortio" && provider != "legacy") ZsdBinary.fail("provider must be legacy or shortio");
+    if (!paceSpecified && (provider == "shortio" ||
+        (rest.length == 1 && StringTools.startsWith(rest[0], "zsd-sio-v1:")))) paceMs = 100;
     return {
-      options: {endpoint: endpoint, timeoutMs: timeoutMs, retries: retries, paceMs: paceMs},
-      rest: rest, output: output, force: force, publicAllowed: publicAllowed
+      options: {endpoint: endpoint, timeoutMs: timeoutMs, retries: retries, paceMs: paceMs, provider: provider, domain: domain},
+      rest: rest, output: output, force: force, domainSpecified: domainSpecified
     };
   }
 
@@ -215,15 +249,44 @@ class Zsd {
   static function usage():String return
     "ZSD - compressed tiny-URL archive transport\n\n" +
     "Usage:\n" +
-    "  zsd upload [NETWORK OPTIONS] --allow-public-upload <file|folder|wildcard>...\n" +
+    "  zsd upload [NETWORK OPTIONS] <file|folder|wildcard>...\n" +
     "  zsd get [NETWORK OPTIONS] [--output DIR] [--force] SHORT_ID\n" +
     "  zsd pack --output FILE.zsd [--force] <file|folder|wildcard>...\n" +
     "  zsd unpack [--output DIR] [--force] FILE.zsd\n\n" +
-    "NETWORK OPTIONS: --endpoint URL  --timeout-ms N  --retries N  --pace-ms N\n\n" +
-    "The default endpoint is is.gd. Its entries are publicly readable, cannot be\n" +
-    "deleted or modified, and may disappear without notice. Do not upload private\n" +
-    "data there; --allow-public-upload is deliberately required. Use --endpoint\n" +
-    "with a compatible local/mock create.php and forward.php service for tests.\n" +
+    "pack/upload write ZSX3 v1: all files in one tar-like ZSDP v1 stream,\n" +
+    "then one ZSL1 compression pass (not POSIX tar or native ZSX2).\n" +
+    "get/unpack verify ZSX3 v1 or legacy ZSDC v1 fully before extraction.\n\n" +
+    "NETWORK OPTIONS: --provider legacy|shortio  --domain HOST\n" +
+    "                 --endpoint URL  --timeout-ms N  --retries N  --pace-ms N\n\n" +
+    "Defaults: Short.io on pex.s.gy; get extracts into the CURRENT directory.\n" +
+    "Examples: zsd upload file1 folder2    zsd get et56g4\n" +
+    #if (cs && zsd_embedded_key)
+    "PRIVATE BUILD: upload/get use an embedded credential, not the environment.\n" +
+    "Anyone receiving this source or executable can extract and use that key.\n" +
+    #else
+    "Set SHORT_IO_API_KEY securely in the runtime environment for upload/get.\n" +
+    #end
+    "Domain priority for bare IDs/uploads: --domain > SHORT_IO_DOMAIN > pex.s.gy.\n" +
+    "Full zsd-sio-v1:HOST:PATH references use HOST, ignoring env/default domain;\n" +
+    "a conflicting explicit --domain fails. Custom-domain uploads print full refs.\n" +
+    "Bare legacy IDs need --provider legacy (is.gd). Old full refs still work.\n" +
+    "Existing unrelated files are retained; overwrites require --force.\n" +
+    "Carrier URLs: https://pex.wf/# + standard Base64 (including +, /, and =).\n" +
+    "The carrier host is NOT the configured Short.io shortening domain.\n" +
+    "Batches contain up to 1000 chunk URLs; bulk calls have a 3000ms gate,\n" +
+    "lookups a separate 100ms gate. Retry-After delays both endpoints.\n" +
+    "--timeout-ms bounds the total Short.io request, including slow body reads.\n" +
+    "URLs are limited to 2048 bytes by this client; chunks are <=1450 bytes.\n" +
+    "Failed uploads print no root; rerunning identical input reuses stable paths.\n" +
+    #if (cs && zsd_embedded_key)
+    "Short.io get uses the compiled credential; domain is in the reference.\n\n" +
+    #else
+    "Short.io get needs the same runtime credential; domain is in the reference.\n\n" +
+    #end
+    "Uploads are public and non-durable; never upload secrets or your only backup.\n" +
+    "Invoking upload is consent; no prompt or --allow-public-upload is required\n" +
+    "(the old flag is accepted for compatibility). Short.io uses api.short.io;\n" +
+    "--endpoint can select an HTTP loopback mock for tests.\n" +
     "Only new ZSD versioned entries are accepted; legacy csdownload entries are\n" +
     "never guessed or silently interpreted.";
 }

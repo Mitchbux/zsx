@@ -1,0 +1,143 @@
+diff -ruN old/libavcodec/allcodecs.c new/libavcodec/allcodecs.c
+--- old/libavcodec/allcodecs.c
++++ new/libavcodec/allcodecs.c
+@@ -289,6 +289,10 @@
+ extern const FFCodec ff_rasc_decoder;
+ extern const FFCodec ff_rawvideo_encoder;
+ extern const FFCodec ff_rawvideo_decoder;
++extern const FFCodec ff_zsx_video_encoder;
++extern const FFCodec ff_zsx_video_decoder;
++extern const FFCodec ff_zsx_dct_video_encoder;
++extern const FFCodec ff_zsx_dct_video_decoder;
+ extern const FFCodec ff_rka_decoder;
+ extern const FFCodec ff_rl2_decoder;
+ extern const FFCodec ff_roq_encoder;
+@@ -571,6 +573,10 @@
+ extern const FFCodec ff_pcm_f32be_decoder;
+ extern const FFCodec ff_pcm_f32le_encoder;
+ extern const FFCodec ff_pcm_f32le_decoder;
++extern const FFCodec ff_zsx_audio_encoder;
++extern const FFCodec ff_zsx_audio_decoder;
++extern const FFCodec ff_zsx_mdct_audio_encoder;
++extern const FFCodec ff_zsx_mdct_audio_decoder;
+ extern const FFCodec ff_pcm_f64be_encoder;
+ extern const FFCodec ff_pcm_f64be_decoder;
+ extern const FFCodec ff_pcm_f64le_encoder;
+diff -ruN old/libavcodec/codec_desc.c new/libavcodec/codec_desc.c
+--- old/libavcodec/codec_desc.c
++++ new/libavcodec/codec_desc.c
+@@ -1961,6 +1961,20 @@
+         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+     },
+ 
++    {
++        .id        = AV_CODEC_ID_ZSX_VIDEO,
++        .type      = AVMEDIA_TYPE_VIDEO,
++        .name      = "zsx_video",
++        .long_name = NULL_IF_CONFIG_SMALL("ZSX production video"),
++        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSLESS,
++    },
++    {
++        .id        = AV_CODEC_ID_ZSX_DCT_VIDEO,
++        .type      = AVMEDIA_TYPE_VIDEO,
++        .name      = "zsx_dct_video",
++        .long_name = NULL_IF_CONFIG_SMALL("ZSX deterministic DCT video"),
++        .props     = AV_CODEC_PROP_LOSSY,
++    },
+     /* various PCM "codecs" */
+     {
+         .id        = AV_CODEC_ID_PCM_S16LE,
+@@ -3421,6 +3428,20 @@
+         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSLESS,
+     },
+ 
++    {
++        .id        = AV_CODEC_ID_ZSX_AUDIO,
++        .type      = AVMEDIA_TYPE_AUDIO,
++        .name      = "zsx_audio",
++        .long_name = NULL_IF_CONFIG_SMALL("ZSX production audio"),
++        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSLESS,
++    },
++    {
++        .id        = AV_CODEC_ID_ZSX_MDCT_AUDIO,
++        .type      = AVMEDIA_TYPE_AUDIO,
++        .name      = "zsx_mdct_audio",
++        .long_name = NULL_IF_CONFIG_SMALL("ZSX experimental MDCT audio"),
++        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
++    },
+     /* subtitle codecs */
+     {
+         .id        = AV_CODEC_ID_DVD_SUBTITLE,
+diff -ruN old/libavcodec/codec_id.h new/libavcodec/codec_id.h
+--- old/libavcodec/codec_id.h
++++ new/libavcodec/codec_id.h
+@@ -324,6 +324,8 @@
+     AV_CODEC_ID_EVC,
+     AV_CODEC_ID_RTV1,
+     AV_CODEC_ID_VMIX,
++    AV_CODEC_ID_ZSX_VIDEO,
++    AV_CODEC_ID_ZSX_DCT_VIDEO,
+ 
+     /* various PCM "codecs" */
+     AV_CODEC_ID_FIRST_AUDIO = 0x10000,     ///< A dummy id pointing at the start of audio codecs
+@@ -544,6 +545,8 @@
+     AV_CODEC_ID_RKA,
+     AV_CODEC_ID_AC4,
+     AV_CODEC_ID_OSQ,
++    AV_CODEC_ID_ZSX_AUDIO,
++    AV_CODEC_ID_ZSX_MDCT_AUDIO,
+ 
+     /* subtitle codecs */
+     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.
+diff -ruN old/libavcodec/Makefile new/libavcodec/Makefile
+--- old/libavcodec/Makefile
++++ new/libavcodec/Makefile
+@@ -624,6 +624,10 @@
+ OBJS-$(CONFIG_QPEG_DECODER)            += qpeg.o
+ OBJS-$(CONFIG_QTRLE_DECODER)           += qtrle.o
+ OBJS-$(CONFIG_QTRLE_ENCODER)           += qtrleenc.o
++OBJS-$(CONFIG_ZSX_VIDEO_DECODER)       += zsx_video.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_VIDEO_ENCODER)       += zsx_video.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_DCT_VIDEO_DECODER)   += zsx_dct_video.o zsx_coefficient_rle.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_DCT_VIDEO_ENCODER)   += zsx_dct_video.o zsx_coefficient_rle.o zsx_core.o zsx_core_bridge.o zsx_stream.o
+ OBJS-$(CONFIG_R10K_DECODER)            += r210dec.o
+ OBJS-$(CONFIG_R10K_ENCODER)            += r210enc.o
+ OBJS-$(CONFIG_R210_DECODER)            += r210dec.o
+@@ -856,6 +859,10 @@
+ OBJS-$(CONFIG_PCM_F32BE_ENCODER)          += pcm.o
+ OBJS-$(CONFIG_PCM_F32LE_DECODER)          += pcm.o
+ OBJS-$(CONFIG_PCM_F32LE_ENCODER)          += pcm.o
++OBJS-$(CONFIG_ZSX_AUDIO_DECODER)          += zsx_audio.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_AUDIO_ENCODER)          += zsx_audio.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_MDCT_AUDIO_DECODER)     += zsx_mdct_audio.o zsx_core.o zsx_core_bridge.o zsx_stream.o
++OBJS-$(CONFIG_ZSX_MDCT_AUDIO_ENCODER)     += zsx_mdct_audio.o zsx_core.o zsx_core_bridge.o zsx_stream.o
+ OBJS-$(CONFIG_PCM_F64BE_DECODER)          += pcm.o
+ OBJS-$(CONFIG_PCM_F64BE_ENCODER)          += pcm.o
+ OBJS-$(CONFIG_PCM_F64LE_DECODER)          += pcm.o
+@@ -1386,3 +1391,5 @@
+ $(SUBDIR)qdm2.o: $(SUBDIR)qdm2_tables.h
+ $(SUBDIR)sinewin.o: $(SUBDIR)sinewin_tables.h
+ endif
++
++$(SUBDIR)zsx_core.o: CFLAGS += -DZSX_LIBRARY -Dmain=zsx_cli_main -Wno-missing-prototypes -Wno-declaration-after-statement
+diff -ruN old/libavformat/nut.c new/libavformat/nut.c
+--- old/libavformat/nut.c
++++ new/libavformat/nut.c
+@@ -46,6 +46,8 @@
+     { AV_CODEC_ID_VP9,              MKTAG('V', 'P', '9', '0') },
+     { AV_CODEC_ID_HEVC,             MKTAG('H', 'E', 'V', 'C') },
+     { AV_CODEC_ID_CPIA,             MKTAG('C', 'P', 'i', 'A') },
++    { AV_CODEC_ID_ZSX_VIDEO,         MKTAG('Z', 'S', 'X', 'V') },
++    { AV_CODEC_ID_ZSX_DCT_VIDEO,     MKTAG('Z', 'S', 'X', 'D') },
+     { AV_CODEC_ID_RAWVIDEO,         MKTAG('R', 'G', 'B', 15 ) },
+     { AV_CODEC_ID_RAWVIDEO,         MKTAG('B', 'G', 'R', 15 ) },
+     { AV_CODEC_ID_RAWVIDEO,         MKTAG('R', 'G', 'B', 16 ) },
+@@ -221,6 +222,8 @@
+ };
+ 
+ const AVCodecTag ff_nut_audio_tags[] = {
++    { AV_CODEC_ID_ZSX_MDCT_AUDIO,    MKTAG('Z', 'S', 'X', 'M') },
++    { AV_CODEC_ID_ZSX_AUDIO,         MKTAG('Z', 'S', 'X', 'A') },
+     { AV_CODEC_ID_PCM_F32BE,        MKTAG(32 , 'D', 'F', 'P') },
+     { AV_CODEC_ID_PCM_F32LE,        MKTAG('P', 'F', 'D', 32 ) },
+     { AV_CODEC_ID_PCM_F64BE,        MKTAG(64 , 'D', 'F', 'P') },
