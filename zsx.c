@@ -1036,7 +1036,6 @@ static int decompress_file(const char *input_path, const char *output_path) {
 	return ok;
 }
 
-#include "zsx_x.h"
 
 static char *default_compressed_name(const char *input) {
 	size_t length = strlen(input);
@@ -1069,28 +1068,15 @@ static void usage(FILE *out, const char *program) {
 		"  %s INPUT [OUTPUT]       Compress to a portable ZSX1 archive\n"
 		"  %s -h INPUT [OUTPUT]    Try character-frequency word hashes before ZSX\n"
 		"  %s -d INPUT [OUTPUT]    Decompress a ZSX1 or ZSH1 archive\n"
-"  %s -x --trust-generated-code INPUT.zxh OUTPUT\n"
-"                         Execute trusted ZXH1 C (UNSANDBOXED)\n"
 		"  %s -h | --help          Show this help\n"
 		"\nDefault output is INPUT.zsx when compressing; decompression strips\n"
 		".zsx or appends .out when that suffix is absent. High mode selects\n"
 		"hashes per chunk only when the complete encoded candidate is smaller.\n",
-program, program, program, program, program);
+program, program, program, program);
 }
 
 int main(int argc, char **argv) {
-if (argc > 1 && !strcmp(argv[1], "-x")) {
-if (argc != 5 || strcmp(argv[2], "--trust-generated-code")) {
-fprintf(stderr, "zsx: -x requires --trust-generated-code INPUT.zxh OUTPUT; native C is NOT sandboxed\n");
-return 2;
-}
-if (!strcmp(argv[3], argv[4])) {
-fprintf(stderr, "zsx: input and output paths must differ\n");
-return 1;
-}
-return execute_zxh(argv[3], argv[4]) ? 0 : 1;
-}
-	int decode = 0;
+int decode = 0;
 	int high = 0;
 	int at = 1;
 	if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {

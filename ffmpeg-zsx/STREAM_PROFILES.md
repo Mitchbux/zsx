@@ -51,27 +51,3 @@ New models require under 39 MiB of tables; trials run sequentially. Total
 playback memory additionally includes compressed input, frames, audio and
 FFmpeg state. WASM retains its 128 MiB maximum with non-aborting malloc.
 
-## Verification
-
-```
-sh ffmpeg-zsx/tests/stream-safety.sh
-python3 ffmpeg-zsx/tests/stream_profiles.py outputs/demo-small-30s.zsv outputs/zsv-player-tests/sample.zsv
-node artifacts/zsv-browser-player/tests/wasm-native-parity.mjs
-ZSV_PARITY_SAMPLE=/tmp/stream-v2.zsv node artifacts/zsv-browser-player/tests/wasm-native-parity.mjs
-ZSV_PARITY_SAMPLE=/tmp/stream-v2.zsv node artifacts/zsv-browser-player/tests/worker-streaming.mjs
-```
-
-The safety suite uses ASan/UBSan and fails each allocation in turn, checks
-truncation even with adjusted length headers, rejects invalid profiles and
-range termination, verifies leak-free recovery and optional-trial fallback.
-The profile suite compiles the uploaded predictors as isolated test oracles
-and checks all four profiles byte-for-byte on real coefficient packets.
-
-Measured complete ZSXD packet totals (unchanged audio/container excluded):
-
-| Input | Frames | Baseline bytes | Selected bytes |
-|---|---:|---:|---:|
-| demo-small-30s | 150 | 195397 | 183876 |
-| player-test sample | 72 | 625880 | 540230 |
-
-These are 5.90% and 13.68% packet savings, not whole-file claims.

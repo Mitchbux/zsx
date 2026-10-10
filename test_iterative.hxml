@@ -1,5 +1,0 @@
--lib hxnodejs
--main TestIterative
--cp .
--js test_iterative.js
--D nodejs

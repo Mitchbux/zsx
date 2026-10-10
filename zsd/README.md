@@ -161,31 +161,12 @@ remains 8 MiB.
 
 These links remain public and non-durable. Keep the original data and save the
 completed root reference; never use this transport for secrets or your only
-backup. No live upload is performed by the tests.
+backup.
 
 API contracts:
 - https://developers.short.io/reference/post_links-bulk
 - https://developers.short.io/reference/get_links-expand
 - https://developers.short.io/reference/post_links
-
-Offline unit tests with an injected clock/transport:
-`haxe -cp . -main zsd.test.ZsdShortIoTest --interp`.
-They cover exact carrier encoding (including `+`, `/`, and `=`), strict invalid
-carrier rejection, old-carrier reads, 1000-plus-remainder batches, byte-exact tree
-roundtrips, retry floors, partial successes, stable reruns, timeouts, authorization failures, malformed
-responses, and cancellation. A 1000-unresolved-link virtual-clock case takes
-100.9 seconds including initial backoff; separate tests enforce bulk pacing
-and cross-endpoint Retry-After floors. The standalone output is additionally compiled
-with `mcs -sdk:4 -langversion:4`.
-`zsd/test/shortio_e2e.py Zsd.exe ZsdShortIoTest.exe` exercises the compiled
-program and compiled test harness against a loopback HTTP mock, checking every
-bulk `originalURL`, multiple input roots/files in a multichunk archive, old
-Short.io carrier reads, and invalid carrier rejection, including
-HTTP-date/seconds `Retry-After` parsing, redirect refusal, slow-drip/header
-total deadlines, response-size rejection, and in-flight cancellation. The harness
-is built from `zsd.test.ZsdShortIoTest` with the same .NET 4/C# 4 settings.
-Exact offline harness build commands are in
-[ZSX3_FORMAT.md](../ZSX3_FORMAT.md#offline-regression-coverage).
 
 The legacy provider's default endpoint is `https://is.gd/`. It is **not private storage**:
 entries are publicly readable by anybody with the short ID, cannot be deleted
@@ -260,8 +241,8 @@ key at Short.io and rebuild to replace it. The domain still uses
 Upload/get syntax, the `pex.wf` carrier, and archive bytes are unchanged.
 
 The same script rebuilds the **shareable** source ZIP from an explicit allowlist:
-the existing 32 entries plus the non-secret private build and verification
-scripts (34 entries). Every original source and every actual ZIP entry is
+the public codec sources, build scripts, documentation, and non-secret
+private-build verification script. Every original source and every actual ZIP entry is
 checked for the configured credential (including escaped/UTF-16 forms);
 the old public ZIP is replaced only after the new archive passes. The public
 ZIP does not contain private outputs or an executable with an embedded key.
@@ -298,29 +279,3 @@ digests. They avoid historical comma/colon/path ambiguity. Legacy
 `csdownload` entries are intentionally not auto-detected: passing one produces
 an explicit “not a ZSD” error rather than a potentially unsafe interpretation.
 
-## Offline regression test
-
-The Haxe test entry point `zsd.test.ZsdArchiveTest` validates exact ZSX3 v1
-headers, a single globally compressed record stream, shared files/empty entries,
-legacy ZSDC decoding, and malformed lengths/digests. It has no provider or
-network dependency. Legacy protocol integration tests should use
-`--provider legacy --endpoint` with a loopback implementation of the contract
-above; do not test against is.gd.
-
-`zsd/test/mock_e2e.py` is that loopback integration test. After the standalone
-binary is built, run (for example)
-
-```text
-mcs -sdk:4 -langversion:4 -out:outputs/Zsd.exe outputs/Zsd.cs
-python3 zsd/test/mock_e2e.py "mono $(pwd)/outputs/Zsd.exe"
-ZSD_EXE="$(pwd)/outputs/Zsd.exe" python3 zsd/test/cli_regression.py
-```
-
-It asserts a small single-leaf upload/download has exactly the data payload and
-one `ZSDT` root node, that each is at most 1900 bytes, and that an empty
-directory survives extraction. The broader regression suite additionally covers
-compressed and random data, multiple inputs and wildcards, multi-level network
-trees, damaged/missing chunks, overwrite protection, and unsafe paths. It also
-extracts an independently constructed legacy ZSDC fixture and checks that
-truncated, corrupt or unsupported ZSX3 frames never create extraction output
-or alter an existing destination. All fixtures are reproducible offline.

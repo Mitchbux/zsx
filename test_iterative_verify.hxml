@@ -1,5 +1,0 @@
-
--main TestIterativeVerify
--cp .
--js test_iterative_verify.js
--D nodejs

@@ -67,26 +67,23 @@ try:
     run(["bash", str(root / "tools/zsd/build-zsd.sh")])
     stage = "shareable source bundle validation"
     public_files = [
-        "README.md", "TestZsxLatest.hx", "ZSX3_FORMAT.md", "ZSX_LATEST_FORMAT.md",
+        "README.md", "ZSX3_FORMAT.md", "ZSX_LATEST_FORMAT.md",
         "Zsd.hx", "ZsxLatest.hx", "buildzsd.hxml", "outputs/Zsd.NOTICES.txt",
         "outputs/Zsd.cs", "outputs/Zsd.source-map.txt", "reference/csdownload-0.3.cs",
-        "reference/zsx-latest.c", "test/zsx_latest_c_cross.sh", "test_latest.hxml",
+        "reference/zsx-latest.c",
         "tools/zsd/THIRD-PARTY-NOTICES.txt", "tools/zsd/build-zsd.sh",
         "tools/zsd/combine-cs.sh", "tools/zsd/build-private-zsd.sh",
         "tools/zsd/verify-private-zsd.py", "zsd/README.md", "zsd/ZsdArchive.hx",
         "zsd/ZsdBinary.hx", "zsd/ZsdContainer.hx", "zsd/ZsdFs.hx",
         "zsd/ZsdHttp.hx", "zsd/ZsdInputs.hx", "zsd/ZsdProtocol.hx",
-        "zsd/ZsdShortIo.hx", "zsd/test/ZsdArchiveTest.hx",
-        "zsd/test/ZsdShortIoTest.hx", "zsd/test/cli_regression.py",
-        "zsd/test/format_fixtures.py", "zsd/test/mock_e2e.py",
-        "zsd/test/shortio_e2e.py",
+        "zsd/ZsdShortIo.hx",
     ]
     public_zip = work / "zsd-net40-source.zip"
     with zipfile.ZipFile(public_zip, "w", zipfile.ZIP_DEFLATED) as bundle:
         for name in public_files:
             data = (root / name).read_bytes()
             check(not any(needle in data for needle in needles))
-            # Keep executable bits on the existing public build/test scripts.
+            # Keep executable bits on the existing public build scripts.
             bundle.write(root / name, name)
     with zipfile.ZipFile(public_zip) as bundle:
         check(bundle.namelist() == public_files)

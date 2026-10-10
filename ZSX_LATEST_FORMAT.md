@@ -83,16 +83,3 @@ truncated headers and payloads, inconsistent lengths/counts, trailing bytes,
 out-of-range chunks, invalid ranks, noncanonical range tails, and output above
 256 MiB fail with an exception.
 
-## Regression coverage
-
-```sh
-haxe test_latest.hxml
-node test_zsx_latest.js
-sh test/zsx_latest_c_cross.sh
-```
-
-`TestZsxLatest` covers empty, odd-length, deterministic random, repeated,
-native-32/native-64, truncated, and corrupt inputs.  The cross script extracts
-only the codec portion of the attached Windows source, removes the UI-only
-Windows include, builds that isolated C11 harness, then verifies C-to-Haxe
-decode, byte-identical compressed chunks, and Haxe-to-C decode.
