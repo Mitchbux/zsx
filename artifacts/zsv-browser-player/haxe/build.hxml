@@ -1,0 +1,6 @@
+-cp haxe
+-js src/generated/player.js
+-D js-es=6
+-D analyzer-optimize
+-dce full
+-main Player

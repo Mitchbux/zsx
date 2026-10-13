@@ -1,5 +1,25 @@
 # ZSX
 
+## Current ZSV browser demo
+
+The new browser player lives in [`artifacts/zsv-browser-player`](artifacts/zsv-browser-player).
+It plays the full snowboard recording (about 4 minutes 32 seconds) in 270×480
+portrait grayscale at 25 fps with stereo audio. After **Load Sample**, playback
+starts automatically once 30 seconds are buffered. Controls appear over the video,
+with a centered play/pause button, a 5 px seek bar, and a two-second auto-hide timer.
+Fullscreen, volume, seeking, and local ZSV2 file playback are supported.
+
+Decoding is incremental in a WebAssembly worker, without a whole-file validation
+pass. Buffered audio continues independently during video stalls; corruption found
+later in a recording can fail after playback has started. Seeking currently
+replays decoding from the beginning and may take time.
+
+The full demo is served from App Storage by `artifacts/api-server`, not committed
+to GitHub. See the [player setup guide](artifacts/zsv-browser-player/README.md)
+for build commands, storage setup, and current limits. The API uses a chunked
+response for the large demo; that publishing fix still needs live verification
+after republishing.
+
 ZSX is a lossless file compressor with compatible implementations in Haxe/JavaScript and portable C.
 
 - The Haxe build provides the browser application, Web Workers, and the archive API.

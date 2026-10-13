@@ -1,0 +1,29 @@
+modules = ["nodejs-24", "python-base-3.13"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["sh", "-c", "pnpm store prune && node scripts/prune-publish-image.mjs --apply"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
+
+[nix]
+channel = "stable-25_05"
+packages = ["haxe", "dotnet-sdk_8", "git-lfs", "emscripten", "patch", "mono", "tinycc", "zig"]
+
+[userenv]
+
+[userenv.shared]
+SHORT_IO_DOMAIN = "pex.s.gy"

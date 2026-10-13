@@ -1,0 +1,15 @@
+import React from "react";
+import { Activity, Disc, FileAudio, Upload } from "lucide-react";
+import { ControlsOverlay } from "../components/controls-overlay";
+import workerUrl from "../workers/zsv-worker.ts?worker&url";
+import { FullscreenButton } from "../components/fullscreen-button";
+
+/** Semantic shell only. Player.hx mounts to these stable DOM IDs after render. */
+export default function Workspace() {
+  const sampleUrl = `${import.meta.env.BASE_URL}api/demo/snowboard-full.zsv`;
+  return <div id="zsv-player" className="relative flex h-[100dvh] w-full bg-background text-foreground font-sans overflow-hidden">
+    <FullscreenButton />
+    <div className="flex-1 flex flex-col min-w-0"><header className="h-14 border-b border-border flex items-center justify-between px-4 sm:px-6 bg-card shrink-0"><div className="flex items-center gap-4"><div className="w-7 h-7 bg-primary text-primary-foreground flex items-center justify-center rounded-[6px] font-bold">Z</div><div><h1 className="font-semibold text-sm">ZSV BROWSER PLAYER</h1><span className="text-[10px] text-muted-foreground font-mono">WASM/HAXE SHELL</span></div></div><div id="zsv-status" data-testid="status-indicator" className="flex items-center gap-2 text-xs font-mono"><span id="zsv-status-icon"><Activity className="w-4" /></span><span id="zsv-status-text">WAITING FOR MEDIA</span></div></header>
+    <main id="zsv-drop-zone" className="flex-1 relative bg-muted/40 flex items-center justify-center overflow-hidden" data-testid="zone-drop-target"><div id="zsv-empty" className="max-w-md w-full p-10 rounded-2xl border-2 border-dashed border-border bg-card flex flex-col items-center text-center"><Upload className="w-12 h-12 mb-6 text-muted-foreground" /><h2 className="text-xl font-semibold mb-2">Drop ZSV file here</h2><p className="text-muted-foreground text-sm mb-8">Load a custom ZSV2 sequence for high-performance local playback.</p><div className="flex gap-4 w-full"><button id="zsv-open" data-testid="button-open-file" className="flex-1 bg-foreground text-background h-11 rounded-lg flex items-center justify-center gap-2"><FileAudio className="w-4" /> Browse Files</button><button id="zsv-sample" data-testid="button-load-sample" className="flex-1 bg-card h-11 rounded-lg border border-border flex items-center justify-center gap-2"><Disc className="w-4" /> Load Sample</button></div><input id="zsv-file" type="file" className="hidden" data-testid="input-file-picker" accept=".zsv,.zsv2" /></div><div id="zsv-video" className="relative hidden w-full h-full max-w-full sm:max-w-[90%] max-h-full sm:max-h-[90%] aspect-video bg-[#0a0a0c] rounded-lg overflow-hidden items-center justify-center"><canvas id="zsv-canvas" data-testid="canvas-player" className="w-full h-full object-contain" /><ControlsOverlay /></div></main>
+    </div><div id="zsv-worker-url" data-worker-url={workerUrl} data-sample-url={sampleUrl} className="hidden" /></div>;
+}

@@ -1,0 +1,8 @@
+ZSV browser decoder licensing
+
+This directory links FFmpeg 6.1.2, licensed under the GNU LGPL 2.1 or later
+(see the FFmpeg source LICENSE.md), with the project's ffmpeg-zsx integration
+and the repository-root zsx.c production core, licensed MIT. The custom codec
+sources are used verbatim from ffmpeg-zsx/src; stock codec substitution is not
+supported. The FFmpeg 6.1.2 source archive is pinned by SHA-256 in
+build-wasm.sh.

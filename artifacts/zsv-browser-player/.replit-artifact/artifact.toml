@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ZSV Browser Player"
+description = "A fully client-side player for local ZSV2 files, with Haxe-powered controls and the project's custom DCT-ZSX and MDCT-ZSX decoder compiled to WebAssembly."
+version = "1.0.0"
+id = "artifacts/zsv-browser-player"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18103
+
+[services.development]
+run = "pnpm --filter @workspace/zsv-browser-player run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/zsv-browser-player", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/zsv-browser-player/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18103"
+BASE_PATH = "/"
