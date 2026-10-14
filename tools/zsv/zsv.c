@@ -12,7 +12,6 @@
 #include <libavfilter/buffersrc.h>
 #include <libavfilter/buffersink.h>
 #include <libavutil/opt.h>
-#include <libswscale/swscale.h>
 #ifdef _WIN32
 #include <windows.h>
 #include <wchar.h>
@@ -23,7 +22,6 @@ typedef struct Track {
     AVStream *in, *out;
     AVFilterGraph *graph;
     AVFilterContext *source, *sink;
-    struct SwsContext *sws;
     int video;
 } Track;
 static AVFormatContext *input, *output;
@@ -53,7 +51,6 @@ static void cleanup(void) {
         avcodec_free_context(&tracks[i]->dec);
         avcodec_free_context(&tracks[i]->enc);
         avfilter_graph_free(&tracks[i]->graph);
-        sws_freeContext(tracks[i]->sws);
     }
     avformat_close_input(&input);
     if (output) { avio_closep(&output->pb); avformat_free_context(output); }
@@ -100,6 +97,24 @@ static void red_only(AVFrame *f) {
         }
     }
 }
+/* Explicit BT.601 RGB-to-limited-range YUV420 conversion. This also avoids
+ * target-specific swscale RGB chroma fast paths in cross-built binaries. */
+static void rgb_to_yuv(const AVFrame *rgb, AVFrame *yuv) {
+    for (int y = 0; y < rgb->height; y++) for (int x = 0; x < rgb->width; x++) {
+        const uint8_t *p = rgb->data[0] + y * rgb->linesize[0] + x * 3;
+        yuv->data[0][y * yuv->linesize[0] + x] =
+            (uint8_t)(16 + (.257f * p[0] + .504f * p[1] + .098f * p[2]));
+    }
+    for (int y = 0; y < rgb->height; y += 2) for (int x = 0; x < rgb->width; x += 2) {
+        float r = 0, g = 0, b = 0;
+        for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) {
+            const uint8_t *p = rgb->data[0] + (y + j) * rgb->linesize[0] + (x + i) * 3;
+            r += p[0] * .25f; g += p[1] * .25f; b += p[2] * .25f;
+        }
+        yuv->data[1][y / 2 * yuv->linesize[1] + x / 2] = (uint8_t)(128 - .148f * r - .291f * g + .439f * b + .5f);
+        yuv->data[2][y / 2 * yuv->linesize[2] + x / 2] = (uint8_t)(128 + .439f * r - .368f * g - .071f * b + .5f);
+    }
+}
 static void silence_until(int64_t video_pts) {
     if (audio.dec) return;
     while (av_compare_ts(silent_pts, audio.enc->time_base, video_pts, video.enc->time_base) < 0) {
@@ -125,11 +140,7 @@ static void drain_filter(Track *t) {
             if (!yuv) check(AVERROR(ENOMEM), "YUV frame");
             yuv->width = 270; yuv->height = 480; yuv->format = AV_PIX_FMT_YUV420P; yuv->pts = f->pts;
             check(av_frame_get_buffer(yuv, 32), "YUV buffer");
-            t->sws = sws_getCachedContext(t->sws, 270, 480, AV_PIX_FMT_RGB24,
-                270, 480, AV_PIX_FMT_YUV420P, SWS_BILINEAR, NULL, NULL, NULL);
-            if (!t->sws) check(AVERROR(ENOMEM), "RGB to YUV");
-            check(sws_scale(t->sws, (const uint8_t *const *)f->data, f->linesize,
-                0, 480, yuv->data, yuv->linesize), "convert red frame");
+            rgb_to_yuv(f, yuv);
             encode(t, yuv); silence_until(yuv->pts + 1); av_frame_free(&yuv);
         } else encode(t, f);
         av_frame_unref(f);

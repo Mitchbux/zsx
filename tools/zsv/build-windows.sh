@@ -16,7 +16,7 @@ if [ ! -f "$SRC/.zsv-configured" ]; then
     test ! -d "$SRC" || { echo "Incomplete build directory; choose a new ZSV_BUILD_ROOT." >&2; exit 1; }
     tar -xf "$ARCHIVE" -C "$WORK"
     cp "$ROOT"/ffmpeg-zsx/src/*.[ch] "$SRC/libavcodec/"
-    cp "$ROOT/zsx.c" "$SRC/libavcodec/zsx_core.c"
+    cp "${ZSV_CORE_SOURCE:-$ROOT/zsx.c}" "$SRC/libavcodec/zsx_core.c"
     patch --batch -d "$SRC" -p1 < "$ROOT/ffmpeg-zsx/patches/ffmpeg-6.1.2-zsx.patch"
     # Zig LLD does not support the GNU ld --pic-executable spelling.
     sed -i 's/ -Wl,--pic-executable,-e,_mainCRTStartup//;s/ -Wl,--pic-executable,-e,mainCRTStartup//' "$SRC/configure"

@@ -48,6 +48,8 @@ Linux, with Zig 0.14.1, make, curl, tar, patch, sed, binutils, and sha256sum.
 The recipe downloads and checksum-verifies FFmpeg 6.1.2, applies the
 repository codec sources and patch, then links the Windows executable.
 No repository secrets or private outputs are needed.
+`ZSV_CORE_SOURCE` can select a clean canonical `zsx.c` if a development
+workspace's root source has unrelated experimental command-line additions.
 
 Outputs live under `generated-artifacts/zsv-windows/`. `zsv.o` is supplied
 in the release package to permit relinking against modified FFmpeg libraries.
@@ -63,3 +65,11 @@ Corresponding wrapper, codec source, patch and reproducible build recipe are
 in this repository; upstream FFmpeg source is available at
 https://ffmpeg.org/releases/ffmpeg-6.1.2.tar.xz (hash pinned in the recipe).
 See the repository's existing codec licensing notices as well.
+
+## Verification
+
+The Windows PE executable was run under Wine 10.5 on Linux, using the
+website's HEVC/AAC TikTok source and a synthetic MPEG-4 silent source.
+Its output was decoded back with the native ZSV decoder to inspect the
+red accents, grayscale background, resolution and stereo audio.
+This is Windows-binary compatibility testing, not a test on Windows hardware.
